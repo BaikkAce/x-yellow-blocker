@@ -1,0 +1,31 @@
+name: Community block report
+description: Contribute X accounts that the extension successfully blocked.
+title: "[Community report] "
+labels: ["community-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This report is public. It contains only X handles selected by the extension. Review the list before submitting.
+  - type: textarea
+    id: handles
+    attributes:
+      label: Reported X handles
+      description: One X handle per line. Do not add tweet text or personal information.
+      placeholder: "@example_spam"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I reviewed these handles and want to contribute this public report.
+          required: true

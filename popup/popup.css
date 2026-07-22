@@ -1,0 +1,208 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  min-width: 340px;
+  background: #f8fafc;
+  color: #111827;
+}
+
+.popup {
+  padding: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.status {
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.group {
+  padding: 10px 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.switches {
+  display: grid;
+  gap: 9px;
+}
+
+label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+
+.switches label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+input[type="number"], textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+
+input[type="number"] {
+  height: 32px;
+  padding: 0 8px;
+}
+
+textarea {
+  resize: vertical;
+  padding: 8px;
+  line-height: 1.35;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.stats div {
+  padding: 8px 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #fff;
+  text-align: center;
+}
+
+.stats strong,
+.stats span {
+  display: block;
+}
+
+.stats strong {
+  font-size: 16px;
+}
+
+.stats span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.sync-heading,
+.sync-actions,
+.remote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.remote-row {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.remote-row button {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.sync-heading {
+  margin-bottom: 9px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.sync-progress {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.sync-actions button:first-child {
+  flex: 1;
+  background: #111827;
+  color: #fff;
+}
+
+.community-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+}
+
+.community-note {
+  margin: 7px 0 9px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.community-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 10px;
+}
+
+button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  body { background: #0f172a; color: #e5e7eb; }
+  .group, .stats, footer { border-color: #253044; }
+  input[type="number"], textarea, .stats div, button {
+    background: #111827;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+  .status, .stats span, .sync-progress, .remote-row, .community-note, .community-actions { color: #9ca3af; }
+  .sync-actions button:first-child { background: #e5e7eb; color: #111827; }
+}

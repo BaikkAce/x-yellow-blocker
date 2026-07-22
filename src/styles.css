@@ -1,0 +1,129 @@
+html[data-xyb-enabled="0"] article[data-xyb] > .xyb-banner {
+  display: none !important;
+}
+
+article[data-xyb] > .xyb-banner {
+  box-sizing: border-box;
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(244, 114, 182, 0.35);
+  border-radius: 8px;
+  background: rgba(253, 242, 248, 0.96);
+  color: #831843;
+  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  article[data-xyb] > .xyb-banner {
+    background: rgba(80, 7, 36, 0.92);
+    border-color: rgba(244, 114, 182, 0.45);
+    color: #fce7f3;
+  }
+}
+
+.xyb-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.xyb-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #db2777;
+}
+
+.xyb-title {
+  font-weight: 700;
+}
+
+.xyb-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.82;
+}
+
+.xyb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.xyb-actions button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(131, 24, 67, 0.35);
+  border-radius: 6px;
+  background: #fff;
+  color: #831843;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.xyb-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.xyb-reasons {
+  margin-top: 7px;
+  font-size: 12px;
+  opacity: 0.74;
+  word-break: break-word;
+}
+
+html[data-xyb-hide="1"] article[data-xyb="detected"] > :not(.xyb-banner) {
+  display: none !important;
+}
+
+html[data-xyb-hide="1"] article[data-xyb="detected"] {
+  min-height: unset !important;
+}
+
+article[data-xyb="revealed"] > .xyb-banner {
+  border-style: dashed;
+}
+
+article[data-xyb-block="queued"] > .xyb-banner,
+article[data-xyb-block="working"] > .xyb-banner {
+  border-color: rgba(245, 158, 11, 0.65);
+}
+
+article[data-xyb-block="done"] > .xyb-banner {
+  border-color: rgba(22, 163, 74, 0.65);
+}
+
+article[data-xyb-block="failed"] > .xyb-banner {
+  border-color: rgba(220, 38, 38, 0.75);
+}
+
+.xyb-mute-sync-toast {
+  position: fixed;
+  z-index: 2147483647;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(360px, calc(100vw - 36px));
+  box-sizing: border-box;
+  padding: 11px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.97);
+  color: #111827;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .xyb-mute-sync-toast {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(15, 23, 42, 0.97);
+    color: #f8fafc;
+  }
+}

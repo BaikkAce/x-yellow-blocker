@@ -1,0 +1,40 @@
+name: Aggregate community block reports
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: community-block-reports
+  cancel-in-progress: false
+
+jobs:
+  aggregate:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.labels.*.name, 'community-report')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read community issues
+        run: gh issue list --repo "$GITHUB_REPOSITORY" --state all --label community-report --limit 1000 --json author,body,number > "$RUNNER_TEMP/community-issues.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Aggregate distinct reporters
+        run: node scripts/aggregate-community-reports.mjs "$RUNNER_TEMP/community-issues.json" blocklists/accounts.txt blocklists/protected-accounts.txt
+        env:
+          MIN_REPORTERS: "3"
+      - name: Commit eligible accounts
+        run: |
+          if git diff --quiet -- blocklists/accounts.txt; then
+            echo "No account reached the threshold."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add blocklists/accounts.txt
+          git commit -m "Update shared blocked accounts"
+          git push

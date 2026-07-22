@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "X Yellow Blocker",
+  "version": "0.4.0",
+  "description": "Detect adult-solicitation tweets on X, hide them, and optionally block high-confidence authors through the X UI.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://raw.githubusercontent.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://mobile.x.com/*",
+        "https://mobile.twitter.com/*"
+      ],
+      "js": ["src/defaults.js", "src/detector.js", "src/x-ui-text.js", "src/mute-words.js", "src/remote-lists.js", "src/community-sharing.js", "src/content.js"],
+      "css": ["src/styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "X Yellow Blocker",
+    "default_popup": "popup/popup.html"
+  }
+}
