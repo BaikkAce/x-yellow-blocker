@@ -67,7 +67,7 @@ if (verdict.shouldHide) {
 - The popup can sync the bundled high-confidence mute words through X's visible settings form without private APIs.
 - Remote keyword and account lists are fetched by the extension service worker and cached atomically in `chrome.storage.local`.
 - Community sharing is opt-in. After X confirms a block, the extension queues only the normalized `@handle` locally; it never uploads tweet text or browsing history.
-- A user contribution opens a prefilled public GitHub Issue and requires the user to confirm submission while signed in to GitHub. No GitHub token is embedded in the extension.
+- A user contribution copies a bounded handle batch to the clipboard and opens a public GitHub Issue form without putting handles in URL parameters. The user pastes and confirms while signed in to GitHub. No GitHub token is embedded in the extension.
 - Repository automation counts each GitHub author once per handle. A handle needs reports from at least three distinct authors and must not be owner-protected before it is appended to the shared account list.
 - Tests and syntax checks pass.
 

@@ -159,11 +159,18 @@
   async function submitCommunityReports() {
     const batch = getCommunityReportBatch(communityReports);
     if (!settings.communitySharingEnabled || !batch.length) return;
-    const version = chrome.runtime.getManifest().version;
-    await chrome.tabs.create({ url: buildCommunityIssueUrl(batch, version), active: true });
-    communityReports = markCommunityReportsSubmitted(communityReports, batch);
-    await chrome.storage.local.set({ [COMMUNITY_REPORTS_STORAGE_KEY]: communityReports });
-    window.close();
+    els.submitCommunityReports.disabled = true;
+    try {
+      await navigator.clipboard.writeText(batch.join('\n'));
+      const version = chrome.runtime.getManifest().version;
+      await chrome.tabs.create({ url: buildCommunityIssueUrl(version), active: true });
+      communityReports = markCommunityReportsSubmitted(communityReports, batch);
+      await chrome.storage.local.set({ [COMMUNITY_REPORTS_STORAGE_KEY]: communityReports });
+      window.close();
+    } catch {
+      els.communityStatus.textContent = '复制失败，名单仍保留';
+      els.submitCommunityReports.disabled = false;
+    }
   }
 
   async function startMuteSync() {

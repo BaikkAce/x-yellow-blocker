@@ -46,7 +46,7 @@
 
 ## 共享贡献
 
-共享贡献默认关闭。开启后，插件会在 X 确认屏蔽成功时把账号加入本地队列。点击“提交到 GitHub”会打开预填的公开 Issue，用户登录 GitHub、检查名单并确认提交。
+共享贡献默认关闭。开启后，插件会在 X 确认屏蔽成功时把账号加入本地队列。点击“提交到 GitHub”会把账号复制到剪贴板并打开公开 Issue 表单，用户粘贴、检查名单并确认提交。账号不会写入 URL 查询参数。
 
 仓库 Action 按不同 GitHub 提交者聚合报告。同一个 X 账号至少需要 3 位不同提交者报告，并且不在 [`blocklists/protected-accounts.txt`](blocklists/protected-accounts.txt) 中，才会自动追加到公共账号名单。插件内不包含 GitHub 写入令牌。
 
@@ -59,6 +59,8 @@ npm test
 npm run check
 npm run package
 ```
+
+隐私政策：[`PRIVACY.md`](PRIVACY.md)。Chrome Web Store 文案和隐私披露草稿位于 [`store-assets/`](store-assets/)。
 
 ## GitHub 调研结论
 

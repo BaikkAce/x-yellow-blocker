@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=1280, initial-scale=1">
+    <title>X Yellow Blocker Screenshot</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; width: 1280px; height: 800px; overflow: hidden; background: #eef1f4; color: #121820; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .topbar { height: 62px; display: flex; align-items: center; gap: 13px; padding: 0 30px; background: #fff; border-bottom: 1px solid #d9dee5; }
+      .topbar img { width: 36px; height: 36px; }
+      .topbar strong { font-size: 19px; }
+      .topbar span { margin-left: auto; color: #5d6875; font-size: 13px; }
+      main { height: 738px; display: grid; grid-template-columns: minmax(0, 1fr) 354px; gap: 24px; padding: 24px 34px; }
+      .timeline { background: #fff; border: 1px solid #d9dee5; }
+      .timeline-header { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 0 22px; border-bottom: 1px solid #e3e7eb; }
+      .timeline-header strong { font-size: 18px; }
+      .timeline-header span { color: #66717e; font-size: 13px; }
+      .post { min-height: 154px; padding: 18px 22px; border-bottom: 1px solid #e3e7eb; }
+      .author { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+      .avatar { width: 42px; height: 42px; border-radius: 50%; background: #dbe2e9; }
+      .handle { color: #65717f; }
+      .copy { margin: 13px 0 0 52px; color: #2c3641; font-size: 16px; line-height: 1.45; }
+      .blocked { padding: 0; background: #f8fafb; }
+      .flag { min-height: 154px; display: flex; flex-direction: column; justify-content: center; padding: 22px 24px; border-left: 5px solid #f2c94c; }
+      .flag-row { display: flex; align-items: center; gap: 10px; }
+      .flag-dot { width: 10px; height: 10px; border-radius: 50%; background: #e7b91d; }
+      .flag strong { font-size: 17px; }
+      .score { margin-left: auto; color: #65717f; font-size: 13px; }
+      .reason { margin: 11px 0 0 20px; color: #5e6874; font-size: 13px; }
+      .done { margin-top: 15px; display: inline-flex; align-items: center; width: fit-content; height: 30px; padding: 0 11px; background: #121820; color: #fff; font-size: 12px; font-weight: 700; }
+      .panel { background: #fff; border: 1px solid #cfd5dc; padding: 16px; }
+      .panel-head { display: flex; align-items: center; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid #e3e7eb; }
+      .panel-head img { width: 38px; height: 38px; }
+      .panel-head strong { font-size: 17px; }
+      .status { margin-left: auto; color: #66717e; font-size: 11px; }
+      .switches { display: grid; gap: 11px; padding: 16px 0; border-bottom: 1px solid #e3e7eb; font-size: 13px; }
+      .switch { display: flex; align-items: center; justify-content: space-between; }
+      .toggle { width: 34px; height: 19px; border-radius: 10px; background: #111820; padding: 3px; }
+      .toggle::after { content: ""; display: block; width: 13px; height: 13px; margin-left: 15px; border-radius: 50%; background: #f2c94c; }
+      .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; padding: 15px 0; border-bottom: 1px solid #e3e7eb; }
+      .stat { padding: 9px 2px; text-align: center; background: #f3f5f7; }
+      .stat strong, .stat span { display: block; }
+      .stat strong { font-size: 16px; }
+      .stat span { margin-top: 3px; color: #6b7580; font-size: 10px; }
+      .section { padding: 14px 0; border-bottom: 1px solid #e3e7eb; }
+      .section-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
+      .section-head span:last-child { color: #66717e; font-size: 11px; font-weight: 500; }
+      .button { margin-top: 10px; height: 34px; display: flex; align-items: center; justify-content: center; background: #121820; color: #fff; font-size: 12px; font-weight: 700; }
+      .community { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; font-size: 12px; }
+      .community strong { color: #2b3440; }
+      .community span { color: #66717e; }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <img src="../assets/icon-master.png" alt="">
+      <strong>X Yellow Blocker</strong>
+      <span>本地识别 · X 原生屏蔽 · 共享名单</span>
+    </div>
+    <main>
+      <section class="timeline">
+        <div class="timeline-header"><strong>评论区扫描</strong><span>实时检测新加载内容</span></div>
+        <article class="post">
+          <div class="author"><span class="avatar"></span><strong>产品研究员</strong><span class="handle">@useful_account · 2 分钟</span></div>
+          <p class="copy">这条普通评论不会被折叠，也不会触发账号屏蔽。</p>
+        </article>
+        <article class="post blocked">
+          <div class="flag">
+            <div class="flag-row"><span class="flag-dot"></span><strong>疑似成人引流</strong><span class="score">@spam_sample · 95</span></div>
+            <div class="reason">引流昵称 · 低信息回复 · 联系方式诱导</div>
+            <div class="done">已通过 X 原生菜单屏蔽</div>
+          </div>
+        </article>
+        <article class="post blocked">
+          <div class="flag">
+            <div class="flag-row"><span class="flag-dot"></span><strong>命中共享屏蔽账号</strong><span class="score">@reported_account · 100</span></div>
+            <div class="reason">远程账号名单 · GitHub 缓存已更新</div>
+            <div class="done">内容已折叠</div>
+          </div>
+        </article>
+      </section>
+      <aside class="panel">
+        <div class="panel-head"><img src="../assets/icon-master.png" alt=""><strong>X Yellow Blocker</strong><span class="status">已加载</span></div>
+        <div class="switches">
+          <div class="switch"><span>启用检测</span><span class="toggle"></span></div>
+          <div class="switch"><span>命中后折叠推文</span><span class="toggle"></span></div>
+          <div class="switch"><span>自动加入 X 屏蔽</span><span class="toggle"></span></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><strong>18</strong><span>识别</span></div>
+          <div class="stat"><strong>0</strong><span>排队</span></div>
+          <div class="stat"><strong>16</strong><span>已屏蔽</span></div>
+          <div class="stat"><strong>2</strong><span>失败</span></div>
+        </div>
+        <div class="section">
+          <div class="section-head"><span>X 屏蔽词</span><span>67 个词</span></div>
+          <div class="button">同步到当前 X 账号</div>
+        </div>
+        <div class="section">
+          <div class="section-head"><span>远程名单</span><span>27 词 · 34 账号</span></div>
+          <div class="button">更新名单</div>
+        </div>
+        <div class="community"><strong>贡献共享屏蔽名单</strong><span>默认关闭</span></div>
+      </aside>
+    </main>
+  </body>
+</html>

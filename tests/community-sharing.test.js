@@ -28,15 +28,15 @@ test('does not queue handles that were already submitted', () => {
   assert.deepEqual(state.submitted, ['@known_spam']);
 });
 
-test('builds a bounded prefilled GitHub issue URL', () => {
-  const handles = Array.from({ length: 35 }, (_, index) => `@spam_${index}`);
-  const url = new URL(buildCommunityIssueUrl(handles, '0.4.0'));
+test('builds a GitHub issue URL without putting reported handles in query parameters', () => {
+  const url = new URL(buildCommunityIssueUrl('0.4.0'));
 
   assert.equal(url.origin, 'https://github.com');
   assert.equal(url.pathname, '/BaikkAce/x-yellow-blocker/issues/new');
   assert.equal(url.searchParams.get('template'), 'community-block-report.yml');
   assert.equal(url.searchParams.get('version'), '0.4.0');
-  assert.equal(url.searchParams.get('handles').split('\n').length, 30);
+  assert.equal(url.searchParams.has('handles'), false);
+  assert.equal(url.searchParams.has('body'), false);
 });
 
 test('moves an opened report batch out of the pending queue', () => {

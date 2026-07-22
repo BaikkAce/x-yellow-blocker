@@ -49,12 +49,10 @@
     return normalizeState(current).pending.slice(0, MAX_REPORT_BATCH);
   }
 
-  function buildCommunityIssueUrl(handles, extensionVersion = '') {
-    const batch = normalizeHandleList(handles).slice(0, MAX_REPORT_BATCH);
+  function buildCommunityIssueUrl(extensionVersion = '') {
     const url = new URL(`https://github.com/${COMMUNITY_REPOSITORY}/issues/new`);
     url.searchParams.set('template', 'community-block-report.yml');
-    url.searchParams.set('title', `[Community report] ${batch.length} blocked account${batch.length === 1 ? '' : 's'}`);
-    url.searchParams.set('handles', batch.join('\n'));
+    url.searchParams.set('title', '[Community report]');
     url.searchParams.set('version', String(extensionVersion || 'unknown').slice(0, 40));
     return url.toString();
   }
