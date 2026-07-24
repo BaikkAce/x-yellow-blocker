@@ -10,7 +10,7 @@
     "128": "assets/icons/icon128.png"
   },
   "permissions": ["storage", "alarms"],
-  "host_permissions": ["https://raw.githubusercontent.com/*", "https://*.workers.dev/*"],
+  "host_permissions": ["https://raw.githubusercontent.com/*", "https://*.workers.dev/*", "https://pbs.twimg.com/*"],
   "background": {
     "service_worker": "src/background.js"
   },

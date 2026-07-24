@@ -300,7 +300,14 @@
         img.src = info.avatarUrl;
         img.alt = '';
         img.loading = 'lazy';
-        img.onerror = () => { img.replaceWith(placeholder()); };
+        img.referrerPolicy = 'no-referrer';
+        // Show first letter of name/handle while loading
+        const letter = (info.displayName || handle).charAt(0).toUpperCase();
+        img.setAttribute('data-fallback', letter);
+        let replaced = false;
+        img.onerror = () => { if (!replaced) { replaced = true; img.replaceWith(placeholder()); } };
+        // Timeout fallback: if image doesn't load in 4s, swap to placeholder
+        setTimeout(() => { if (!replaced && !img.complete) { replaced = true; img.replaceWith(placeholder()); } }, 4000);
         item.appendChild(img);
       } else {
         item.appendChild(placeholder());

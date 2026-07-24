@@ -440,7 +440,8 @@
     const displayName = cleanDisplayName(userNameText, handle);
     const avatarImg = article.querySelector('img[src*="profile_images"]') ||
       article.querySelector('img[src*="twimg.com/profile"]');
-    const avatarUrl = avatarImg ? (avatarImg.src || '').replace('_normal', '_bigger') : '';
+    // Use currentSrc (lazy-loaded) or src; don't transform — raw URL is valid
+    const avatarUrl = avatarImg ? (avatarImg.currentSrc || avatarImg.src || '') : '';
     const externalLinks = Array.from(article.querySelectorAll('a[href]'))
       .map(link => link.href || link.getAttribute('href') || '')
       .filter(isExternalLink);
