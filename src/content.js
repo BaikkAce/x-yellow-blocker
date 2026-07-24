@@ -440,8 +440,9 @@
     const displayName = cleanDisplayName(userNameText, handle);
     const avatarImg = article.querySelector('img[src*="profile_images"]') ||
       article.querySelector('img[src*="twimg.com/profile"]');
-    // Use currentSrc (lazy-loaded) or src; don't transform — raw URL is valid
-    const avatarUrl = avatarImg ? (avatarImg.currentSrc || avatarImg.src || '') : '';
+    // Convert to data URL in-page, so popup can render without external requests
+    const avatarDataUrl = avatarImg && avatarImg.complete && avatarImg.naturalWidth > 0
+      ? imgToDataUrl(avatarImg) : '';
     const externalLinks = Array.from(article.querySelectorAll('a[href]'))
       .map(link => link.href || link.getAttribute('href') || '')
       .filter(isExternalLink);
@@ -449,13 +450,27 @@
     return {
       handle,
       displayName,
-      avatarUrl,
+      avatarUrl: avatarDataUrl,
       tweetText,
       articleText: extractTextWithEmoji(article),
       externalLinks,
       isReply: isReplyArticle(article),
       verified: !!article.querySelector('svg[data-testid="icon-verified"]')
     };
+  }
+
+  function imgToDataUrl(img) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, 32, 32);
+      return canvas.toDataURL('image/jpeg', 0.8);
+    } catch (e) {
+      // Cross-origin tainted canvas — use empty string
+      return '';
+    }
   }
 
   function extractHandle(root) {
