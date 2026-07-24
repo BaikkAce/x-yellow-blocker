@@ -385,74 +385,6 @@ async function cleanupOldData(env) {
   await db.prepare('DELETE FROM demoted_accounts WHERE demoted_at < ?').bind(thirtyDaysAgo).run();
 }
 
-// ---------------------------------------------------------------------------
-// TEMP: Push multiple files to GitHub in one commit (Git Database API)
-// ---------------------------------------------------------------------------
-async function pushFilesToGitHub(env, message, files) {
-  const { GITHUB_TOKEN, GITHUB_REPO } = env;
-  if (!GITHUB_TOKEN || !GITHUB_REPO) return { ok: false, error: 'missing token' };
-
-  const apiBase = `https://api.github.com/repos/${GITHUB_REPO}`;
-  const headers = {
-    Authorization: `Bearer ${GITHUB_TOKEN}`,
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'xyb-worker/1.0',
-    'Content-Type': 'application/json',
-  };
-
-  try {
-    // 1. Get current main ref SHA
-    const refResp = await fetch(`${apiBase}/git/refs/heads/main`, { headers });
-    if (!refResp.ok) throw new Error(`ref fetch failed: ${refResp.status}`);
-    const refData = await refResp.json();
-    const parentSha = refData.object.sha;
-
-    // 2. Get parent commit's tree SHA
-    const commitResp = await fetch(`${apiBase}/git/commits/${parentSha}`, { headers });
-    if (!commitResp.ok) throw new Error(`commit fetch failed: ${commitResp.status}`);
-    const commitData = await commitResp.json();
-    const baseTreeSha = commitData.tree.sha;
-
-    // 3. Create blobs for each file
-    const treeEntries = [];
-    for (const f of files) {
-      const blobResp = await fetch(`${apiBase}/git/blobs`, {
-        method: 'POST', headers,
-        body: JSON.stringify({ content: f.content, encoding: 'base64' }),
-      });
-      if (!blobResp.ok) throw new Error(`blob failed for ${f.path}: ${blobResp.status}`);
-      const blobData = await blobResp.json();
-      treeEntries.push({ path: f.path, mode: '100644', type: 'blob', sha: blobData.sha });
-    }
-
-    // 4. Create new tree
-    const treeResp = await fetch(`${apiBase}/git/trees`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
-    });
-    if (!treeResp.ok) throw new Error(`tree create failed: ${treeResp.status}`);
-    const treeData = await treeResp.json();
-
-    // 5. Create commit
-    const newCommitResp = await fetch(`${apiBase}/git/commits`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ tree: treeData.sha, parents: [parentSha], message }),
-    });
-    if (!newCommitResp.ok) throw new Error(`commit create failed: ${newCommitResp.status}`);
-    const newCommitData = await newCommitResp.json();
-
-    // 6. Update ref
-    const patchResp = await fetch(`${apiBase}/git/refs/heads/main`, {
-      method: 'PATCH', headers,
-      body: JSON.stringify({ sha: newCommitData.sha, force: false }),
-    });
-    if (!patchResp.ok) throw new Error(`ref update failed: ${patchResp.status}`);
-
-    return { ok: true, sha: newCommitData.sha, files: files.length };
-  } catch (error) {
-    return { ok: false, error: error.message };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Main request handler
@@ -722,21 +654,6 @@ export default {
       }
 
       return jsonResponse({ handle: normalized, status: 'recorded', disputes: disputeCount });
-    }
-
-    // TEMP: batch push files to GitHub via Git Database API (one commit)
-    if (request.method === 'POST' && url.pathname === '/api/admin/push') {
-      const PUSH_KEY = 'xyb_temp_push_8f3a2c';
-      if (request.headers.get('x-push-key') !== PUSH_KEY) {
-        return jsonResponse({ error: 'forbidden' }, 403);
-      }
-      const body = await request.json();
-      const { message, files } = body;
-      if (!message || !Array.isArray(files) || !files.length) {
-        return jsonResponse({ error: 'missing message or files' }, 400);
-      }
-      const result = await pushFilesToGitHub(env, message, files);
-      return jsonResponse(result, result.ok ? 200 : 500);
     }
 
     // Fallback
