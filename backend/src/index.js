@@ -386,6 +386,7 @@ async function cleanupOldData(env) {
 }
 
 
+
 // ---------------------------------------------------------------------------
 // Main request handler
 // ---------------------------------------------------------------------------
@@ -655,8 +656,6 @@ export default {
 
       return jsonResponse({ handle: normalized, status: 'recorded', disputes: disputeCount });
     }
-
-
     // Fallback
     return jsonResponse({ error: 'not found' }, 404);
   },
