@@ -387,67 +387,6 @@ async function cleanupOldData(env) {
 
 
 // ---------------------------------------------------------------------------
-// TEMP: Push files + manage releases via GitHub API
-// ---------------------------------------------------------------------------
-async function pushFilesToGitHub(env, message, files) {
-  const { GITHUB_TOKEN, GITHUB_REPO } = env;
-  if (!GITHUB_TOKEN || !GITHUB_REPO) return { ok: false, error: 'missing token' };
-  const apiBase = 'https://api.github.com/repos/' + GITHUB_REPO;
-  const headers = { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'User-Agent': 'xyb-worker/1.0', 'Content-Type': 'application/json' };
-  try {
-    const refResp = await fetch(apiBase + '/git/refs/heads/main', { headers });
-    if (!refResp.ok) throw new Error('ref fetch failed: ' + refResp.status);
-    const parentSha = (await refResp.json()).object.sha;
-    const baseTreeSha = (await (await fetch(apiBase + '/git/commits/' + parentSha, { headers })).json()).tree.sha;
-    const treeEntries = [];
-    for (const f of files) {
-      const blobResp = await fetch(apiBase + '/git/blobs', { method: 'POST', headers, body: JSON.stringify({ content: f.content, encoding: 'base64' }) });
-      if (!blobResp.ok) throw new Error('blob failed for ' + f.path + ': ' + blobResp.status);
-      treeEntries.push({ path: f.path, mode: '100644', type: 'blob', sha: (await blobResp.json()).sha });
-    }
-    const treeData = await (await fetch(apiBase + '/git/trees', { method: 'POST', headers, body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }) })).json();
-    const newCommitData = await (await fetch(apiBase + '/git/commits', { method: 'POST', headers, body: JSON.stringify({ tree: treeData.sha, parents: [parentSha], message }) })).json();
-    const patchResp = await fetch(apiBase + '/git/refs/heads/main', { method: 'PATCH', headers, body: JSON.stringify({ sha: newCommitData.sha, force: false }) });
-    if (!patchResp.ok) throw new Error('ref update failed: ' + patchResp.status);
-    return { ok: true, sha: newCommitData.sha, files: files.length };
-  } catch (error) { return { ok: false, error: error.message }; }
-}
-
-async function manageRelease(env, action, params) {
-  const { GITHUB_TOKEN, GITHUB_REPO } = env;
-  if (!GITHUB_TOKEN || !GITHUB_REPO) return { ok: false, error: 'missing token' };
-  const apiBase = 'https://api.github.com/repos/' + GITHUB_REPO;
-  const headers = { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'User-Agent': 'xyb-worker/1.0', 'Content-Type': 'application/json' };
-  try {
-    if (action === 'delete') {
-      const r = await fetch(apiBase + '/releases/tags/' + params.tag, { headers });
-      if (!r.ok) return { ok: false, error: 'release not found: ' + r.status };
-      const rel = await r.json();
-      const dr = await fetch(apiBase + '/releases/' + rel.id, { method: 'DELETE', headers });
-      return { ok: dr.ok, deleted: rel.id };
-    }
-    if (action === 'create') {
-      const relResp = await fetch(apiBase + '/releases', { method: 'POST', headers, body: JSON.stringify({ tag_name: params.tag, name: params.title, body: params.body, draft: false, prerelease: false }) });
-      if (!relResp.ok) return { ok: false, error: 'release create failed: ' + relResp.status };
-      const relData = await relResp.json();
-      if (params.assetContent && params.assetName) {
-        const binary = atob(params.assetContent);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const uploadUrl = relData.upload_url.replace('{?name,label}', '?name=' + params.assetName);
-        const assetResp = await fetch(uploadUrl, { method: 'POST', headers: { Authorization: 'Bearer ' + GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'User-Agent': 'xyb-worker/1.0', 'Content-Type': 'application/zip' }, body: bytes });
-        if (!assetResp.ok) return { ok: false, error: 'asset upload failed: ' + assetResp.status, releaseUrl: relData.html_url };
-        const assetData = await assetResp.json();
-        return { ok: true, releaseUrl: relData.html_url, assetUrl: assetData.browser_download_url };
-      }
-      return { ok: true, releaseUrl: relData.html_url };
-    }
-    return { ok: false, error: 'unknown action' };
-  } catch (error) { return { ok: false, error: error.message }; }
-}
-
-
-// ---------------------------------------------------------------------------
 // Main request handler
 // ---------------------------------------------------------------------------
 export default {
