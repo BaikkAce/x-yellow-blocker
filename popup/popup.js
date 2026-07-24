@@ -267,6 +267,12 @@
     }
   }
 
+  function placeholder() {
+    const span = document.createElement('span');
+    span.className = 'blocked-avatar-placeholder';
+    return span;
+  }
+
   function renderBlockedList() {
     const handles = Array.isArray(settings.blockedHandles) ? settings.blockedHandles : [];
     els.blockedCount.textContent = `${handles.length} 个`;
@@ -294,12 +300,10 @@
         img.src = info.avatarUrl;
         img.alt = '';
         img.loading = 'lazy';
-        img.onerror = () => { img.style.display = 'none'; };
+        img.onerror = () => { img.replaceWith(placeholder()); };
         item.appendChild(img);
       } else {
-        const placeholder = document.createElement('span');
-        placeholder.className = 'blocked-avatar-placeholder';
-        item.appendChild(placeholder);
+        item.appendChild(placeholder());
       }
 
       // Name + handle

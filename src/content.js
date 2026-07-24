@@ -699,9 +699,9 @@
 
   async function rememberBlocked(handle, info) {
     const normalized = normalizeHandle(handle);
-    if (!normalized || isBlocked(normalized)) return;
-    const next = [...(settings.blockedHandles || []), normalized];
-    await patchSettings({ blockedHandles: next });
+    if (!normalized) return;
+
+    // Always store avatar/displayName even for already-blocked handles
     if (info && (info.displayName || info.avatarUrl)) {
       try {
         const data = await chrome.storage.local.get('xybBlockedInfo');
@@ -712,6 +712,11 @@
         console.warn('[XYB] failed to store blocked info', e);
       }
     }
+
+    // Add to blocked list (skip if already there)
+    if (isBlocked(normalized)) return;
+    const next = [...(settings.blockedHandles || []), normalized];
+    await patchSettings({ blockedHandles: next });
   }
 
   async function queueCommunityContribution(handle) {
