@@ -1,5 +1,6 @@
 # X Yellow Blocker - community-reported accounts
 # Auto-managed by Cloudflare Worker. Do not edit manually.
+@artofspecuycky
 @audreygrace714
 @baipateldruc
 @bakrpearsoabj3
