@@ -438,6 +438,9 @@
     const tweetText = tweetTextEl ? extractTextWithEmoji(tweetTextEl) : '';
     const userNameText = extractTextWithEmoji(userNameEl);
     const displayName = cleanDisplayName(userNameText, handle);
+    const avatarImg = article.querySelector('img[src*="profile_images"]') ||
+      article.querySelector('img[src*="twimg.com/profile"]');
+    const avatarUrl = avatarImg ? (avatarImg.src || '').replace('_normal', '_bigger') : '';
     const externalLinks = Array.from(article.querySelectorAll('a[href]'))
       .map(link => link.href || link.getAttribute('href') || '')
       .filter(isExternalLink);
@@ -445,6 +448,7 @@
     return {
       handle,
       displayName,
+      avatarUrl,
       tweetText,
       articleText: extractTextWithEmoji(article),
       externalLinks,
@@ -597,7 +601,7 @@
       const result = await attemptBlock(job);
       if (result.ok) {
         sessionBlockCount += 1;
-        await rememberBlocked(job.handle);
+        await rememberBlocked(job.handle, job.tweet);
         autoReportBlocked(job.handle, job.verdict).catch(err =>
           console.warn('[XYB] auto-report failed', err)
         );
@@ -693,11 +697,21 @@
     }
   }
 
-  async function rememberBlocked(handle) {
+  async function rememberBlocked(handle, info) {
     const normalized = normalizeHandle(handle);
     if (!normalized || isBlocked(normalized)) return;
     const next = [...(settings.blockedHandles || []), normalized];
     await patchSettings({ blockedHandles: next });
+    if (info && (info.displayName || info.avatarUrl)) {
+      try {
+        const data = await chrome.storage.local.get('xybBlockedInfo');
+        const all = (data && data.xybBlockedInfo) || {};
+        all[normalized] = { displayName: info.displayName || '', avatarUrl: info.avatarUrl || '', blockedAt: Date.now() };
+        await chrome.storage.local.set({ xybBlockedInfo: all });
+      } catch (e) {
+        console.warn('[XYB] failed to store blocked info', e);
+      }
+    }
   }
 
   async function queueCommunityContribution(handle) {

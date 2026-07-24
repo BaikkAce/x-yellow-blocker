@@ -179,7 +179,7 @@ textarea {
   display: grid;
   gap: 6px;
   margin-top: 8px;
-  max-height: 220px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -192,7 +192,6 @@ textarea {
 .blocked-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
   border: 1px solid #e5e7eb;
@@ -205,7 +204,40 @@ textarea {
   opacity: 0.55;
 }
 
+.blocked-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.blocked-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  flex-shrink: 0;
+}
+
+.blocked-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.blocked-name {
+  font-weight: 600;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .blocked-item .handle {
+  color: #6b7280;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -215,6 +247,7 @@ textarea {
   min-height: 26px;
   padding: 0 9px;
   font-size: 12px;
+  flex-shrink: 0;
 }
 
 footer {

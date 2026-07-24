@@ -58,18 +58,20 @@
   let remoteStatus = null;
   let communityReports = normalizeCommunityState(null);
   let autoReportedCache = [];
+  let blockedInfo = {};
   let saveTimer = null;
 
   boot();
 
   async function boot() {
-    [settings, muteSyncState, remoteBlocklists, remoteStatus, communityReports, autoReportedCache] = await Promise.all([
+    [settings, muteSyncState, remoteBlocklists, remoteStatus, communityReports, autoReportedCache, blockedInfo] = await Promise.all([
       loadSettings(),
       loadMuteSyncState(),
       loadRemoteBlocklists(),
       loadRemoteStatus(),
       loadCommunityReports(),
-      loadAutoReportedCache(sg)
+      loadAutoReportedCache(sg),
+      loadBlockedInfo()
     ]);
     render();
     bindEvents();
@@ -157,6 +159,10 @@
         settings = mergeSettings(changes[STORAGE_KEY].newValue);
         renderBlockedList();
       }
+      if (changes['xybBlockedInfo']) {
+        blockedInfo = changes['xybBlockedInfo'].newValue || {};
+        renderBlockedList();
+      }
     });
   }
 
@@ -228,6 +234,11 @@
     return data && data[REMOTE_STATUS_KEY] || null;
   }
 
+  async function loadBlockedInfo() {
+    const data = await chrome.storage.local.get('xybBlockedInfo');
+    return (data && data.xybBlockedInfo) || {};
+  }
+
   async function refreshRemoteLists() {
     els.refreshRemoteLists.disabled = true;
     els.remoteListStatus.textContent = '更新中';
@@ -271,23 +282,50 @@
 
     const whitelist = new Set((settings.whitelist || []).map(normalizeHandle));
     for (const handle of handles) {
+      const normalized = normalizeHandle(handle);
+      const info = blockedInfo[normalized] || {};
       const item = document.createElement('div');
-      item.className = 'blocked-item' + (whitelist.has(normalizeHandle(handle)) ? ' whitelisted' : '');
+      item.className = 'blocked-item' + (whitelist.has(normalized) ? ' whitelisted' : '');
 
-      const span = document.createElement('span');
-      span.className = 'handle';
-      span.textContent = handle;
+      // Avatar
+      if (info.avatarUrl) {
+        const img = document.createElement('img');
+        img.className = 'blocked-avatar';
+        img.src = info.avatarUrl;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = () => { img.style.display = 'none'; };
+        item.appendChild(img);
+      } else {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'blocked-avatar-placeholder';
+        item.appendChild(placeholder);
+      }
+
+      // Name + handle
+      const text = document.createElement('div');
+      text.className = 'blocked-text';
+      if (info.displayName) {
+        const name = document.createElement('span');
+        name.className = 'blocked-name';
+        name.textContent = info.displayName;
+        text.appendChild(name);
+      }
+      const h = document.createElement('span');
+      h.className = 'handle';
+      h.textContent = handle;
+      text.appendChild(h);
+      item.appendChild(text);
 
       const btn = document.createElement('button');
       btn.type = 'button';
-      const isWhitelisted = whitelist.has(normalizeHandle(handle));
+      const isWhitelisted = whitelist.has(normalized);
       btn.textContent = isWhitelisted ? '已加白' : '移除并加白';
       btn.disabled = isWhitelisted;
       if (!isWhitelisted) {
         btn.addEventListener('click', () => removeAndWhitelist(handle, btn, item));
       }
 
-      item.appendChild(span);
       item.appendChild(btn);
       els.blockedList.appendChild(item);
     }
@@ -306,6 +344,11 @@
         settings.whitelist = [...(settings.whitelist || []), normalized];
       }
       await chrome.storage.local.set({ [STORAGE_KEY]: settings });
+      // Clean up blocked info
+      if (blockedInfo[normalized]) {
+        delete blockedInfo[normalized];
+        await chrome.storage.local.set({ xybBlockedInfo: blockedInfo });
+      }
       // Update the whitelist textarea
       els.whitelist.value = (settings.whitelist || []).join('\n');
       btn.textContent = '已加白';
