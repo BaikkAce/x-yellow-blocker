@@ -440,9 +440,8 @@
     const displayName = cleanDisplayName(userNameText, handle);
     const avatarImg = article.querySelector('img[src*="profile_images"]') ||
       article.querySelector('img[src*="twimg.com/profile"]');
-    // Convert to data URL in-page, so popup can render without external requests
-    const avatarDataUrl = avatarImg && avatarImg.complete && avatarImg.naturalWidth > 0
-      ? imgToDataUrl(avatarImg) : '';
+    // Store raw URL — background SW will fetch & convert to data URL
+    const avatarUrl = avatarImg ? (avatarImg.currentSrc || avatarImg.src || '') : '';
     const externalLinks = Array.from(article.querySelectorAll('a[href]'))
       .map(link => link.href || link.getAttribute('href') || '')
       .filter(isExternalLink);
@@ -450,27 +449,13 @@
     return {
       handle,
       displayName,
-      avatarUrl: avatarDataUrl,
+      avatarUrl,
       tweetText,
       articleText: extractTextWithEmoji(article),
       externalLinks,
       isReply: isReplyArticle(article),
       verified: !!article.querySelector('svg[data-testid="icon-verified"]')
     };
-  }
-
-  function imgToDataUrl(img) {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 32;
-      canvas.height = 32;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, 32, 32);
-      return canvas.toDataURL('image/jpeg', 0.8);
-    } catch (e) {
-      // Cross-origin tainted canvas — use empty string
-      return '';
-    }
   }
 
   function extractHandle(root) {
@@ -717,12 +702,21 @@
     const normalized = normalizeHandle(handle);
     if (!normalized) return;
 
-    // Always store avatar/displayName even for already-blocked handles
-    if (info && (info.displayName || info.avatarUrl)) {
+    // Fetch avatar as data URL via background SW (avoids cross-origin canvas taint)
+    let avatarDataUrl = '';
+    if (info && info.avatarUrl) {
+      try {
+        const resp = await chrome.runtime.sendMessage({ type: 'XYB_FETCH_AVATAR', url: info.avatarUrl });
+        if (resp && resp.ok) avatarDataUrl = resp.dataUrl;
+      } catch (e) { /* keep empty */ }
+    }
+
+    // Always store even for already-blocked handles
+    if (info && (info.displayName || avatarDataUrl)) {
       try {
         const data = await chrome.storage.local.get('xybBlockedInfo');
         const all = (data && data.xybBlockedInfo) || {};
-        all[normalized] = { displayName: info.displayName || '', avatarUrl: info.avatarUrl || '', blockedAt: Date.now() };
+        all[normalized] = { displayName: info.displayName || '', avatarUrl: avatarDataUrl, blockedAt: Date.now() };
         await chrome.storage.local.set({ xybBlockedInfo: all });
       } catch (e) {
         console.warn('[XYB] failed to store blocked info', e);

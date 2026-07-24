@@ -41,6 +41,13 @@ importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
       return true;
     }
 
+    if (message.type === 'XYB_FETCH_AVATAR') {
+      fetchAvatarAsDataUrl(message.url)
+        .then(dataUrl => sendResponse({ ok: true, dataUrl }))
+        .catch(error => sendResponse({ ok: false, error: String(error && error.message || error) }));
+      return true;
+    }
+
     return false;
   });
 
@@ -57,6 +64,19 @@ importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
     return data;
+  }
+
+  async function fetchAvatarAsDataUrl(url) {
+    if (!url) throw new Error('no url');
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const blob = await resp.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('read failed'));
+      reader.readAsDataURL(blob);
+    });
   }
 
   function refreshRemoteBlocklists() {
