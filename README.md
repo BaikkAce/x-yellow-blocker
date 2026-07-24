@@ -46,11 +46,9 @@
 
 ## 共享贡献
 
-共享贡献默认关闭。开启后，插件会在 X 确认屏蔽成功时把账号加入本地队列。点击“提交到 GitHub”会把账号复制到剪贴板并打开公开 Issue 表单，用户粘贴、检查名单并确认提交。账号不会写入 URL 查询参数。
+共享贡献默认关闭。开启后，插件会在 X 确认屏蔽成功时，仅把规范化的 `@handle` 和一个匿名本机标识通过 HTTPS 上报到 Cloudflare Worker，不上报推文正文、显示名、个人资料、链接或浏览记录。
 
-仓库 Action 按不同 GitHub 提交者聚合报告。同一个 X 账号至少需要 3 位不同提交者报告，并且不在 [`blocklists/protected-accounts.txt`](blocklists/protected-accounts.txt) 中，才会自动追加到公共账号名单。插件内不包含 GitHub 写入令牌。
-
-注意：GitHub Issue 及其提交者身份是公开的。贡献内容只应包含 X handle，不要添加推文正文或个人信息。
+一次上报即把该 handle 发布到公共 GitHub 共享名单。任意用户都可在弹窗里对共享 handle 发起「误报」；同一 handle 累计 3 位不同用户误报即自动移出共享名单（自愈），之后需 2 位不同用户重新上报才会回榜。插件本身不含 GitHub 写入令牌，写入由 Worker 的密钥完成。
 
 ## 开发命令
 

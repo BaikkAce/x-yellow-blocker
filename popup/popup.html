@@ -71,12 +71,21 @@
       </section>
 
       <section class="group community" aria-label="共享屏蔽账号">
-        <label class="community-toggle"><input id="communitySharingEnabled" type="checkbox"> 贡献共享屏蔽名单</label>
-        <p class="community-note">仅复制 @账号；在 GitHub 表单粘贴并确认后公开发布。</p>
+        <label class="community-toggle"><input id="communitySharingEnabled" type="checkbox"> 匿名自动上报屏蔽账号</label>
+        <p class="community-note" id="communityNote">开启后，你屏蔽的账号会通过 Cloudflare Worker 匿名上报，并立即同步到共享名单（任何人屏蔽都会同步）。</p>
         <div class="community-actions">
-          <span id="communityStatus">待贡献 0 个</span>
-          <button id="submitCommunityReports" type="button">提交到 GitHub</button>
+          <span id="communityStatus">未开启</span>
+          <button id="submitCommunityReports" type="button" hidden>手动提交</button>
         </div>
+      </section>
+
+      <section class="group shared-list" aria-label="共享屏蔽名单">
+        <div class="sync-heading">
+          <span>共享屏蔽名单</span>
+          <span id="sharedListCount" class="sync-progress">0 账号</span>
+        </div>
+        <p class="community-note">名单里的账号会被自动屏蔽。如果你认为某个账号是误判，点「误报」提交异议；累计 3 人异议后该账号会自动移出共享名单（自愈机制），之后需 2 人重新确认才会再次加入。</p>
+        <div id="sharedList" class="shared-list-items"></div>
       </section>
 
       <footer>

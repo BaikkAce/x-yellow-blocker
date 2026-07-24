@@ -45,9 +45,16 @@
     return merged;
   }
 
+  // Cloudflare Worker URL — deployed backend for anonymous community reporting
+  const WORKER_URL = 'https://xyb-reports.xyb-blocker.workers.dev';
+
+  const CLIENT_ID_STORAGE_KEY = 'xybClientId';
+
   globalThis.XybDefaults = {
     DEFAULT_SETTINGS,
     cloneDefaultSettings,
-    mergeSettings
+    mergeSettings,
+    WORKER_URL,
+    CLIENT_ID_STORAGE_KEY
   };
 })();

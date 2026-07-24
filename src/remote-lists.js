@@ -7,6 +7,12 @@
     accounts: 'https://raw.githubusercontent.com/BaikkAce/x-yellow-blocker/main/blocklists/accounts.txt'
   });
 
+  // Safety limits — prevent memory exhaustion from maliciously large lists
+  const MAX_KEYWORDS = 500;
+  const MAX_ACCOUNTS = 10000;
+  const MAX_KEYWORD_LENGTH = 60;
+  const MAX_FETCH_BYTES = 512 * 1024; // 512 KB per file
+
   function parseLines(text) {
     const seen = new Set();
     return String(text || '')
@@ -23,7 +29,11 @@
   }
 
   function parseKeywordList(text) {
-    return parseLines(text).filter(word => word.length <= 80);
+    return parseLines(text)
+      .filter(word => word.length > 0 && word.length <= MAX_KEYWORD_LENGTH)
+      // Reject keywords containing HTML/script-like content
+      .filter(word => !/[<>{}\\]/.test(word))
+      .slice(0, MAX_KEYWORDS);
   }
 
   function normalizeBlockedAccount(value) {
@@ -42,7 +52,8 @@
         if (seen.has(handle)) return false;
         seen.add(handle);
         return true;
-      });
+      })
+      .slice(0, MAX_ACCOUNTS);
   }
 
   function createRemoteBlocklists({ keywordsText = '', accountsText = '', fetchedAt = Date.now() } = {}) {
@@ -60,7 +71,13 @@
       if (!response || !response.ok) {
         throw new Error(`${name} list request failed: ${response && response.status || 'network error'}`);
       }
-      return response.text();
+      // Limit response size to prevent memory exhaustion from malicious content
+      const text = await response.text();
+      if (text.length > MAX_FETCH_BYTES) {
+        console.warn(`[XYB] ${name} list exceeded ${MAX_FETCH_BYTES} bytes, truncating`);
+        return text.slice(0, MAX_FETCH_BYTES);
+      }
+      return text;
     }
 
     const [keywordsText, accountsText] = await Promise.all([

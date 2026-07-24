@@ -15,12 +15,19 @@
     advanceMuteSyncState
   } = globalThis.XybMuteWords;
   const { REMOTE_LISTS_STORAGE_KEY } = globalThis.XybRemoteLists;
+  const { WORKER_URL } = globalThis.XybDefaults;
   const {
     COMMUNITY_REPORTS_STORAGE_KEY,
-    enqueueCommunityReport
+    enqueueCommunityReport,
+    getOrCreateClientId,
+    buildVerificationPayload,
+    loadAutoReportedCache,
+    saveAutoReportedCache,
+    wasAlreadyAutoReported
   } = globalThis.XybCommunitySharing;
 
   const STORAGE_KEY = 'settings';
+  const REMOTE_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // auto-refresh shared lists every 1 hour
   const ARTICLE_SELECTOR = 'article[data-testid="tweet"], article[role="article"]';
   const RESERVED_PATHS = /^(home|explore|notifications|messages|i|settings|search|compose|bookmarks|following|followers|jobs)$/i;
   let settings = mergeSettings({});
@@ -47,6 +54,7 @@
     installMuteSyncListener();
     resumeMuteWordSync();
     refreshRemoteBlocklistsIfStale();
+    setInterval(refreshRemoteBlocklistsIfStale, REMOTE_REFRESH_INTERVAL_MS);
     console.info('[XYB] loaded', { autoBlock: settings.autoBlock, hideThreshold: settings.hideThreshold });
   }
 
@@ -91,8 +99,7 @@
   }
 
   function refreshRemoteBlocklistsIfStale() {
-    const sixHours = 6 * 60 * 60 * 1000;
-    if (Date.now() - Number(remoteBlocklists.fetchedAt || 0) < sixHours) return;
+    if (Date.now() - Number(remoteBlocklists.fetchedAt || 0) < REMOTE_REFRESH_INTERVAL_MS) return;
     chrome.runtime.sendMessage({ type: 'XYB_REFRESH_REMOTE_LISTS' }).catch(error => {
       console.warn('[XYB] remote blocklist refresh failed', error);
     });
@@ -591,7 +598,9 @@
       if (result.ok) {
         sessionBlockCount += 1;
         await rememberBlocked(job.handle);
-        await queueCommunityContribution(job.handle);
+        autoReportBlocked(job.handle, job.verdict).catch(err =>
+          console.warn('[XYB] auto-report failed', err)
+        );
         markBlockState(job.article, 'done');
         updateStats({ blocked: 1 });
       } else {
@@ -702,6 +711,48 @@
       console.warn('[XYB] failed to queue community contribution', error);
     }
   }
+
+  // Fire-and-forget auto-report to Cloudflare Worker.
+  // Falls back to manual queue when Worker is not configured.
+  // Never blocks the block queue; failures are silently logged.
+  async function autoReportBlocked(handle, verdict) {
+    if (!settings.communitySharingEnabled) return;
+    if (listHas(remoteBlocklists.accounts, handle)) return;
+
+    const normalized = normalizeHandle(handle);
+    if (!normalized) return;
+
+    // Fallback to manual queue when Worker not configured
+    if (!WORKER_URL) {
+      return queueCommunityContribution(normalized);
+    }
+
+    try {
+      const cache = await loadAutoReportedCache(sg);
+      if (wasAlreadyAutoReported(cache, normalized)) return;
+
+      const clientId = await getOrCreateClientId(sg, ss);
+      const verification = buildVerificationPayload(verdict);
+      if (!verification) return;
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'XYB_AUTO_REPORT',
+        handles: [normalized],
+        clientId: clientId,
+        verifications: { [normalized]: verification }
+      });
+
+      if (response && response.ok) {
+        const updated = await saveAutoReportedCache(ss, cache, normalized);
+        console.info('[XYB] auto-reported', normalized, 'results:', response.results);
+      }
+    } catch (error) {
+      console.warn('[XYB] auto-report error for', normalized, error && error.message || error);
+    }
+  }
+
+  function sg(key) { return chrome.storage.local.get(key); }
+  function ss(items) { return chrome.storage.local.set(items); }
 
   async function addWhitelist(handle) {
     const normalized = normalizeHandle(handle);

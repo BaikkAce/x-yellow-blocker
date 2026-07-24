@@ -1,0 +1,8 @@
+name = "xyb-reports"
+main = "src/index.js"
+compatibility_date = "2026-07-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "xyb-reports-db"
+database_id = "4805d7e6-1053-4c3d-aa53-419a3504661b"

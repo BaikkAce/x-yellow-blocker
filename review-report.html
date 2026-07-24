@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X Yellow Blocker 代码审查 & 上架评估</title>
+<style>
+  :root {
+    --bg: #f8fafc; --card: #fff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b;
+    --accent: #7c3aed; --green: #16a34a; --amber: #d97706; --red: #dc2626; --blue: #2563eb;
+    --code-bg: #f1f5f9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 28px; font-size: 14px; }
+  h2 { font-size: 18px; margin: 32px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+  h3 { font-size: 15px; margin: 20px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 14px; }
+  .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge-high { background: #fef2f2; color: var(--red); }
+  .badge-mid { background: #fffbeb; color: var(--amber); }
+  .badge-low { background: #f0fdf4; color: var(--green); }
+  .badge-ok { background: #eff6ff; color: var(--blue); }
+  .badge-info { background: #f5f3ff; color: var(--accent); }
+  .file-tag { font-family: "SF Mono", Consolas, monospace; font-size: 12px; background: var(--code-bg); padding: 2px 6px; border-radius: 4px; color: var(--muted); }
+  ul { list-style: none; padding: 0; }
+  li { padding: 4px 0 4px 20px; position: relative; }
+  li::before { content: ""; position: absolute; left: 6px; top: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  li.high::before { background: var(--red); }
+  li.mid::before { background: var(--amber); }
+  li.low::before { background: var(--green); }
+  li.ok::before { background: var(--blue); }
+  code { font-family: "SF Mono", Consolas, monospace; font-size: 13px; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .summary-item { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+  .summary-item .num { font-size: 28px; font-weight: 700; }
+  .summary-item .label { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .verdict-box { border-radius: 10px; padding: 20px; margin: 16px 0; }
+  .verdict-yes { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .verdict-warn { background: #fffbeb; border: 1px solid #fde68a; }
+  .verdict-box strong { font-size: 16px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .todo-list { counter-reset: todo; }
+  .todo-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .todo-item:last-child { border-bottom: none; }
+  .todo-num { flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; counter-increment: todo; }
+  .todo-num::before { content: counter(todo); }
+  .todo-body { flex: 1; }
+  .todo-body strong { display: block; margin-bottom: 2px; }
+  .todo-body span { color: var(--muted); font-size: 13px; }
+  .checklist { display: grid; gap: 6px; }
+  .check-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; }
+  .check-icon { flex: 0 0 20px; font-size: 16px; line-height: 1.4; }
+  .check-text { flex: 1; }
+  .check-text.done { color: var(--muted); }
+  .check-text.done span { text-decoration: line-through; }
+  .file-ref { font-family: monospace; font-size: 12px; color: var(--blue); }
+  .note { background: #eff6ff; border-left: 3px solid var(--blue); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 13px; }
+  .warn-note { background: #fffbeb; border-left: 3px solid var(--amber); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; font-size: 13px; }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>X Yellow Blocker — 代码审查 & 上架评估</h1>
+<p class="subtitle">版本 0.4.0 · 审查日期 2026-07-23 · 代码总量 ~2,900 行 · 43 测试全通过</p>
+
+<div class="summary-grid">
+  <div class="summary-item"><div class="num" style="color:var(--green)">43</div><div class="label">测试通过</div></div>
+  <div class="summary-item"><div class="num" style="color:var(--blue)">7</div><div class="label">源码模块</div></div>
+  <div class="summary-item"><div class="num" style="color:var(--accent)">0</div><div class="label">外部依赖</div></div>
+  <div class="summary-item"><div class="num" style="color:var(--amber)">14</div><div class="label">完善建议</div></div>
+</div>
+
+<!-- ========== 第一部分：能不能直接用 ========== -->
+<h2>一、能不能直接给别人用？</h2>
+
+<div class="verdict-box verdict-yes">
+  <strong>✅ 可以直接用（开发者模式加载）</strong>
+  <p style="margin-top:8px;">代码完整，测试通过，无构建步骤。用户下载仓库 → <code>chrome://extensions</code> → 开发者模式 → Load unpacked → 即可运行。</p>
+</div>
+
+<div class="verdict-box verdict-warn">
+  <strong>⚠️ 上架 Chrome Web Store 需要处理几个小问题后才能提交</strong>
+  <p style="margin-top:8px;">核心功能就绪，但有几处需要调整（见下方清单）。不涉及二次开发/重写，只是配置和文案层面的小修补。</p>
+</div>
+
+<h3>上架待办清单</h3>
+<div class="todo-list">
+  <div class="todo-item">
+    <div class="todo-num"></div>
+    <div class="todo-body">
+      <strong>manifest.json description 改为中文</strong>
+      <span>当前是英文 <code>"Detect adult-solicitation tweets on X..."</code>，但 popup 和 listing 都是中文。上架中文区建议统一，或用 <code>__MSG_</code> 国际化。这是最显眼的不一致。</span>
+    </div>
+  </div>
+  <div class="todo-item">
+    <div class="todo-num"></div>
+    <div class="todo-body">
+      <strong>确认 Windows 上 <code>zip</code> 命令可用</strong>
+      <span><code>npm run package</code> 用的 <code>zip -r</code>。Git Bash 自带 <code>zip</code>，但原生 CMD/PowerShell 没有。可改用 PowerShell <code>Compress-Archive</code> 或手动压缩。也可直接在 <code>chrome://extensions</code> 点 "Pack extension" 生成 .crx。</span>
+    </div>
+  </div>
+  <div class="todo-item">
+    <div class="todo-num"></div>
+    <div class="todo-body">
+      <strong>注册 Chrome Web Store 开发者账号</strong>
+      <span>一次性 $5 注册费。用 Google 账号登录 <a href="https://chrome.google.com/webstore/devconsole">Developer Dashboard</a>，提交 zip 包、填写 listing（文案已备好）、上传截图和 promo 图。</span>
+    </div>
+  </div>
+  <div class="todo-item">
+    <div class="todo-num"></div>
+    <div class="todo-body">
+      <strong>隐私政策 URL 可访问性确认</strong>
+      <span>当前引用 GitHub blob URL。Chrome Web Store 要求一个可公开访问的 URL，GitHub 页面满足要求。但部分审核员偏好独立域名托管。如被拒，可考虑 GitHub Pages 部署一份。</span>
+    </div>
+  </div>
+  <div class="todo-item">
+    <div class="todo-num"></div>
+    <div class="todo-body">
+      <strong>建议添加 <code>"minimum_chrome_version": "116"</code></strong>
+      <span>MV3 Service Worker 的某些 API（如 <code>chrome.runtime.onMessage</code> 异步 sendResponse）在 Chrome 99+ 才稳定。设 116 可覆盖绝大多数用户，避免旧版兼容问题。非必须但推荐。</span>
+    </div>
+  </div>
+</div>
+
+<h3>已就绪项</h3>
+<div class="checklist">
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">manifest.json MV3 格式正确，权限最小化（仅 storage + raw.githubusercontent.com）</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">content_scripts 自动覆盖 x.com / twitter.com，无需额外 host_permissions</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">隐私政策 PRIVACY.md + store-assets/privacy-practices.md 已写好</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">store-assets/listing-zh-CN.md 商店文案已备好</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">截图 screenshot-1280x800.png + promo-440x280.png 已生成</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">图标 icon16/32/48/128 齐全</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">LICENSE (开源协议) 已包含</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">无远程代码执行（不加载外部 JS），符合 MV3 CSP 要求</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">GitHub Actions 自动聚合社区报告，Issue 模板已配好</span></div>
+  <div class="check-item"><span class="check-icon">✅</span><span class="check-text">社区贡献默认关闭、不收集推文正文，隐私合规</span></div>
+</div>
+
+<!-- ========== 第二部分：功能完善建议 ========== -->
+<h2>二、功能完善建议</h2>
+
+<h3>高优先级（影响用户体验和留存）</h3>
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-high">高</span>
+    <strong>1. 被屏蔽账号列表管理 UI</strong>
+    <span class="file-tag">content.js → popup.html</span>
+  </div>
+  <p><code>blockedHandles</code> 存了所有已屏蔽的 handle，但 popup 里没有入口查看或移除。用户误屏蔽后只能去 X 设置页手动找。建议在 popup 加一个折叠区域展示列表，支持单条删除（从 <code>settings.blockedHandles</code> 移除即可，X 端的 unblock 仍需用户手动操作或提示去 X 设置页）。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-high">高</span>
+    <strong>2. 设置导入 / 导出</strong>
+    <span class="file-tag">popup.js</span>
+  </div>
+  <p>白名单、关注保护、阈值配置全存在 <code>chrome.storage.local</code>。重装扩展、换电脑、多 Chrome profile 都会丢失。加一个"导出 JSON"和"导入 JSON"按钮即可，数据结构本身就是 <code>settings</code> 对象。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-high">高</span>
+    <strong>3. 用户自定义关键词</strong>
+    <span class="file-tag">detector.js → popup</span>
+  </div>
+  <p>当前检测规则完全靠内置正则 + 远程 keywords.txt。用户遇到新型引流话术时只能等维护者更新。建议在 popup 加一个"自定义屏蔽词"文本框，存储后作为 <code>remoteKeywords</code> 的补充传入 <code>evaluateTweet</code>。<code>findRemoteKeyword</code> 逻辑可直接复用，几乎零成本。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-high">高</span>
+    <strong>4. 误报反馈通道</strong>
+    <span class="file-tag">content.js → banner</span>
+  </div>
+  <p>Banner 有"显示 / 屏蔽 / 信任"三个按钮，但没有"误报"反馈。用户觉得检测错误时没有直接通道告诉维护者。可以在"信任"旁边加一个"反馈误报"按钮，复制推文 handle + 检测原因到剪贴板并打开 GitHub Issue（复用社区贡献的 issue 流程，换一个 template）。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-high">高</span>
+    <strong>5. 扩展图标 Badge 计数</strong>
+    <span class="file-tag">background.js</span>
+  </div>
+  <p>自动屏蔽在后台静默执行，用户浏览 X 时可能完全没注意到。建议用 <code>chrome.action.setBadgeText</code> 在扩展图标上显示本轮已屏蔽数（如 "3"），点击 popup 后清除。不需要额外权限，<code>action</code> 权限 MV3 自带。</p>
+</div>
+
+<h3>中优先级（提升健壮性和覆盖面）</h3>
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-mid">中</span>
+    <strong>6. i18n 国际化框架</strong>
+    <span class="file-tag">popup.html → manifest.json</span>
+  </div>
+  <p>Popup 全中文，但 <code>x-ui-text.js</code> 已支持中/英/日/韩四种语言的屏蔽菜单匹配。如果面向海外用户，popup 也应国际化。用 Chrome 原生 <code>chrome.i18n</code> + <code>_locales/</code> 目录，或简单的 JS locale map。不急，但上国际市场前必须做。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-mid">中</span>
+    <strong>7. 检测历史日志</strong>
+    <span class="file-tag">content.js → popup</span>
+  </div>
+  <p>当前统计只有 4 个计数器（识别/排队/已屏蔽/失败）。加一个最近 50 条记录的环形缓冲区，存 <code>{ handle, score, category, time, action }</code>。用户可以在 popup 里看到"最近屏蔽了谁、因为什么"，也方便排查误报。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-mid">中</span>
+    <strong>8. 快速暂停 / 恢复</strong>
+    <span class="file-tag">popup.js</span>
+  </div>
+  <p>用户可能临时想看完整时间线（比如做调研）。当前需要打开 popup → 取消勾选"启用检测" → 重新扫描。可以加一个显眼的"暂停 30 分钟"按钮，或右键菜单快捷暂停。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-mid">中</span>
+    <strong>9. protected-accounts.txt 预填</strong>
+    <span class="file-tag">blocklists/</span>
+  </div>
+  <p>当前为空。建议预填一批高关注度的官方/媒体/公众人物账号（如 <code>@X</code>, <code>@TwitterSafety</code> 等），防止社区报告误伤。也可以考虑自动把用户的 followedHandles 合并到保护逻辑（当前已有运行时保护，但远程账号列表的 100 分会覆盖保护——不过 <code>evaluateTweet</code> 开头已检查 whitelist/followedHandles 优先返回 protected，所以运行时没问题，只是远程列表聚合时需要 protected-accounts.txt）。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-mid">中</span>
+    <strong>10. 远程列表完整性校验</strong>
+    <span class="file-tag">remote-lists.js → background.js</span>
+  </div>
+  <p>从 GitHub Raw 下载 keywords.txt 和 accounts.txt 时没有 checksum 或签名验证。如果仓库被入侵或 GitHub 被劫持，攻击者可以注入任意 handle 到 accounts.txt，导致用户自动屏蔽合法账号。建议在仓库维护一个 <code>SHA256SUMS</code> 文件，下载后校验哈希。或者用 GitHub Releases 的 asset 附带签名。</p>
+</div>
+
+<h3>低优先级（锦上添花）</h3>
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-low">低</span>
+    <strong>11. 主题手动切换</strong>
+  </div>
+  <p>当前用 <code>prefers-color-scheme</code> 自动跟随系统。部分用户想手动指定。加一个 light/dark/auto 三选一即可。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-low">低</span>
+    <strong>12. 首次使用引导</strong>
+  </div>
+  <p>Popup 里的"隐藏分""屏蔽分""关注保护"等术语对非技术用户不友好。可以加一个 <code>?</code> tooltip 或首次安装时弹出简短引导。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-low">低</span>
+    <strong>13. accounts.txt 添加元数据</strong>
+  </div>
+  <p>当前只有 handle 列表，没有加入原因或日期。加注释行 <code># @handle 2026-07-22 community:3reporters</code> 可以追溯。不过 <code>parseAccountList</code> 会过滤 <code>#</code> 开头的行，所以注释不会影响功能。</p>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="badge badge-low">低</span>
+    <strong>14. 社区贡献替代方案（非 GitHub 用户）</strong>
+  </div>
+  <p>当前社区贡献需要 GitHub 账号。可以加一个"复制到剪贴板"的退路：用户复制 handle 列表后自行处理（发邮件、发 issue 等）。<code>submitCommunityReports</code> 已有剪贴板逻辑，只是之后强制打开 GitHub Issue 页面。可以加一个选项让用户选择是否打开 GitHub。</p>
+</div>
+
+<!-- ========== 第三部分：代码质量评价 ========== -->
+<h2>三、代码质量评价</h2>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>评价</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>架构设计</td><td style="color:var(--green)">优秀</td><td>7 个模块各司其职，通过 globalThis 挂载共享。无构建工具、无依赖、无 transpile，纯原生 JS，加载即跑。</td></tr>
+    <tr><td>检测引擎</td><td style="color:var(--green)">优秀</td><td>纯函数 <code>evaluateTweet</code> 易测试，评分逻辑分层清晰（display name / body / reply / emoji / remote）。43 个测试覆盖正例和反例。</td></tr>
+    <tr><td>DOM 适配</td><td style="color:var(--amber)">良好·脆弱</td><td>依赖 X 的 <code>data-testid</code> 和 aria-label，X 改版会断。代码已有多语言 fallback 和宽泛选择器，但本质上无法避免。失败原因有文案提示，用户体验可接受。</td></tr>
+    <tr><td>隐私安全</td><td style="color:var(--green)">优秀</td><td>不调私有 API、不收集推文正文、社区贡献默认关闭、无远程代码执行、无 GitHub token。权限最小化。</td></tr>
+    <tr><td>测试覆盖</td><td style="color:var(--green)">良好</td><td>detector / remote-lists / community-sharing / mute-words / x-ui-text / community-aggregate 六个模块有测试。content.js 和 popup.js 无测试（需要浏览器环境，合理）。</td></tr>
+    <tr><td>错误处理</td><td style="color:var(--amber)">良好</td><td>核心流程有 try/catch，storage 读写有 fallback。但 <code>boot()</code> 如果抛异常会静默失败（只有 console.warn），用户看不到。建议加一个全局错误提示 banner。</td></tr>
+    <tr><td>性能</td><td style="color:var(--green)">良好</td><td>MutationObserver + WeakSet 去重，只处理新增节点。stats 批量刷新（700ms debounce）。<code>reEvaluateAll</code> 在设置变更时触发全量重扫，但只在必要时调用。</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <strong>架构亮点：</strong>整个扩展零依赖、零构建步骤。所有源码是可直接在浏览器运行的 IIFE 模块，通过 <code>globalThis.Xyb*</code> 命名空间共享。测试用 Node.js 内置 <code>node --test</code>，不需要 Jest/Mocha。这在 Chrome 扩展生态里是非常干净的实现。
+</div>
+
+<div class="warn-note">
+  <strong>最大风险：</strong>X DOM 结构变更。<code>findMoreButton</code>、<code>findBlockMenuItem</code>、<code>findConfirmBlockButton</code> 三个函数依赖 <code>data-testid="caret"</code>、<code>data-testid="confirmationSheetConfirm"</code> 等选择器。X 历史上会不定期改这些 testid。建议在 README 或 popup 里加一个"检测失效怎么办"的说明，并考虑加一个自动检测 selector 失效的通知机制。
+</div>
+
+<!-- ========== 第四部分：建议实施顺序 ========== -->
+<h2>四、建议实施顺序</h2>
+
+<table>
+  <thead>
+    <tr><th>阶段</th><th>事项</th><th>工作量</th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="3"><strong>上架前</strong><br><span style="color:var(--muted);font-size:12px;">1-2 天</span></td><td>manifest description 改中文</td><td>5 分钟</td></tr>
+    <tr><td>确认/修复 zip 打包命令</td><td>15 分钟</td></tr>
+    <tr><td>提交 Chrome Web Store（注册 + 上传 + 填表）</td><td>30 分钟</td></tr>
+    <tr><td rowspan="5"><strong>v0.5</strong><br><span style="color:var(--muted);font-size:12px;">1-2 周</span></td><td>被屏蔽列表管理 UI</td><td>半天</td></tr>
+    <tr><td>设置导入/导出</td><td>2 小时</td></tr>
+    <tr><td>用户自定义关键词</td><td>2 小时</td></tr>
+    <tr><td>Badge 计数</td><td>1 小时</td></tr>
+    <tr><td>快速暂停按钮</td><td>1 小时</td></tr>
+    <tr><td rowspan="4"><strong>v0.6+</strong><br><span style="color:var(--muted);font-size:12px;">按需</span></td><td>检测历史日志</td><td>半天</td></tr>
+    <tr><td>误报反馈通道</td><td>半天</td></tr>
+    <tr><td>i18n 国际化</td><td>1-2 天</td></tr>
+    <tr><td>远程列表完整性校验</td><td>半天</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  审查基于 commit 704a5b8 (2026-07-22) · 43/43 tests pass · syntax check pass
+</footer>
+
+</div>
+</body>
+</html>

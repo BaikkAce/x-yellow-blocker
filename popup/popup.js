@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'settings';
-  const { mergeSettings } = globalThis.XybDefaults;
+  const { mergeSettings, WORKER_URL } = globalThis.XybDefaults;
   const { normalizeHandle } = globalThis.XybDetector;
   const {
     MUTE_SYNC_STORAGE_KEY,
@@ -12,11 +12,16 @@
   const { REMOTE_LISTS_STORAGE_KEY } = globalThis.XybRemoteLists;
   const {
     COMMUNITY_REPORTS_STORAGE_KEY,
+    AUTO_REPORTED_STORAGE_KEY,
     normalizeState: normalizeCommunityState,
     getCommunityReportBatch,
     buildCommunityIssueUrl,
-    markCommunityReportsSubmitted
+    markCommunityReportsSubmitted,
+    loadAutoReportedCache,
+    getOrCreateClientId
   } = globalThis.XybCommunitySharing;
+
+  const DISPUTED_STORAGE_KEY = 'disputedHandles';
   const REMOTE_STATUS_KEY = 'remoteBlocklistsStatus';
 
   const els = {
@@ -42,8 +47,11 @@
     remoteListStatus: document.getElementById('remoteListStatus'),
     refreshRemoteLists: document.getElementById('refreshRemoteLists'),
     communitySharingEnabled: document.getElementById('communitySharingEnabled'),
+    communityNote: document.getElementById('communityNote'),
     communityStatus: document.getElementById('communityStatus'),
-    submitCommunityReports: document.getElementById('submitCommunityReports')
+    submitCommunityReports: document.getElementById('submitCommunityReports'),
+    sharedListCount: document.getElementById('sharedListCount'),
+    sharedList: document.getElementById('sharedList')
   };
 
   let settings = mergeSettings({});
@@ -51,17 +59,21 @@
   let remoteBlocklists = { keywords: [], accounts: [], fetchedAt: 0 };
   let remoteStatus = null;
   let communityReports = normalizeCommunityState(null);
+  let autoReportedCache = [];
+  let disputedHandles = [];
   let saveTimer = null;
 
   boot();
 
   async function boot() {
-    [settings, muteSyncState, remoteBlocklists, remoteStatus, communityReports] = await Promise.all([
+    [settings, muteSyncState, remoteBlocklists, remoteStatus, communityReports, autoReportedCache, disputedHandles] = await Promise.all([
       loadSettings(),
       loadMuteSyncState(),
       loadRemoteBlocklists(),
       loadRemoteStatus(),
-      loadCommunityReports()
+      loadCommunityReports(),
+      loadAutoReportedCache(sg),
+      loadDisputedHandles()
     ]);
     render();
     bindEvents();
@@ -116,6 +128,7 @@
     renderMuteSync();
     renderRemoteLists();
     renderCommunityReports();
+    renderSharedList();
   }
 
   async function loadMuteSyncState() {
@@ -133,6 +146,7 @@
       if (changes[REMOTE_LISTS_STORAGE_KEY]) {
         remoteBlocklists = changes[REMOTE_LISTS_STORAGE_KEY].newValue || { keywords: [], accounts: [], fetchedAt: 0 };
         renderRemoteLists();
+        renderSharedList();
       }
       if (changes[REMOTE_STATUS_KEY]) {
         remoteStatus = changes[REMOTE_STATUS_KEY].newValue || null;
@@ -140,6 +154,10 @@
       }
       if (changes[COMMUNITY_REPORTS_STORAGE_KEY]) {
         communityReports = normalizeCommunityState(changes[COMMUNITY_REPORTS_STORAGE_KEY].newValue);
+        renderCommunityReports();
+      }
+      if (changes[AUTO_REPORTED_STORAGE_KEY]) {
+        autoReportedCache = loadAutoReportedCacheSync(changes[AUTO_REPORTED_STORAGE_KEY].newValue);
         renderCommunityReports();
       }
     });
@@ -150,10 +168,39 @@
     return normalizeCommunityState(data && data[COMMUNITY_REPORTS_STORAGE_KEY]);
   }
 
+  async function loadDisputedHandles() {
+    const data = await chrome.storage.local.get(DISPUTED_STORAGE_KEY);
+    const handles = data && data[DISPUTED_STORAGE_KEY];
+    return Array.isArray(handles)
+      ? handles.map(normalizeHandle).filter(Boolean)
+      : [];
+  }
+
   function renderCommunityReports() {
-    const count = communityReports.pending.length;
-    els.communityStatus.textContent = `待贡献 ${count} 个`;
-    els.submitCommunityReports.disabled = !settings.communitySharingEnabled || count === 0;
+    const autoReported = autoReportedCache.length;
+    const workerReady = !!WORKER_URL;
+
+    if (!settings.communitySharingEnabled) {
+      els.communityStatus.textContent = '未开启';
+      els.submitCommunityReports.hidden = true;
+    } else if (workerReady) {
+      els.communityStatus.textContent = autoReported > 0
+        ? `匿名自动上报中 · 本次 ${autoReported} 个`
+        : '匿名自动上报已就绪';
+      els.submitCommunityReports.hidden = true;
+    } else {
+      els.communityStatus.textContent = 'Worker 未配置 · 使用手动提交';
+      els.submitCommunityReports.hidden = false;
+      els.submitCommunityReports.disabled = communityReports.pending.length === 0;
+      els.communityStatus.textContent = `待贡献 ${communityReports.pending.length} 个`;
+    }
+  }
+
+  function loadAutoReportedCacheSync(value) {
+    const handles = Array.isArray(value) ? value : (value && value[AUTO_REPORTED_STORAGE_KEY]);
+    return Array.isArray(handles)
+      ? handles.map(h => String(h).trim().toLowerCase()).filter(h => h && h.startsWith('@'))
+      : [];
   }
 
   async function submitCommunityReports() {
@@ -217,6 +264,61 @@
       els.remoteListStatus.textContent = `远程更新失败，使用缓存 ${keywordCount}/${accountCount}`;
     } else {
       els.remoteListStatus.textContent = `远程缓存：${keywordCount} 词 · ${accountCount} 账号`;
+    }
+  }
+
+  function renderSharedList() {
+    const accounts = Array.isArray(remoteBlocklists.accounts) ? remoteBlocklists.accounts : [];
+    els.sharedListCount.textContent = `${accounts.length} 账号`;
+    els.sharedList.innerHTML = '';
+
+    if (!accounts.length) {
+      const empty = document.createElement('p');
+      empty.className = 'shared-empty';
+      empty.textContent = '暂无共享账号，点「更新名单」拉取最新。';
+      els.sharedList.appendChild(empty);
+      return;
+    }
+
+    const disputed = new Set(disputedHandles);
+    for (const handle of accounts) {
+      const item = document.createElement('div');
+      item.className = 'shared-item' + (disputed.has(handle) ? ' disputed' : '');
+
+      const span = document.createElement('span');
+      span.className = 'handle';
+      span.textContent = handle;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const already = disputed.has(handle);
+      btn.textContent = already ? '已异议' : '误报';
+      btn.disabled = already;
+      if (!already) {
+        btn.addEventListener('click', () => disputeHandle(handle, btn, item));
+      }
+
+      item.appendChild(span);
+      item.appendChild(btn);
+      els.sharedList.appendChild(item);
+    }
+  }
+
+  async function disputeHandle(handle, btn, item) {
+    const original = '误报';
+    btn.disabled = true;
+    btn.textContent = '提交中…';
+    try {
+      await chrome.runtime.sendMessage({ type: 'XYB_DISPUTE', handle });
+      disputedHandles = Array.from(new Set([...disputedHandles, handle]));
+      await ss({ [DISPUTED_STORAGE_KEY]: disputedHandles });
+      btn.textContent = '已异议';
+      item.classList.add('disputed');
+    } catch (error) {
+      btn.disabled = false;
+      btn.textContent = '失败';
+      console.warn('[XYB] dispute failed for', handle, error && error.message || error);
+      setTimeout(() => { btn.textContent = original; }, 1500);
     }
   }
 
@@ -305,4 +407,7 @@
     els.status.textContent = '已保存';
     setTimeout(() => { els.status.textContent = '已加载'; }, 900);
   }
+
+  function sg(key) { return chrome.storage.local.get(key); }
+  function ss(items) { return chrome.storage.local.set(items); }
 })();

@@ -1,16 +1,16 @@
 {
   "manifest_version": 3,
   "name": "X Yellow Blocker",
-  "version": "0.4.0",
-  "description": "Detect adult-solicitation tweets on X, hide them, and optionally block high-confidence authors through the X UI.",
+  "version": "0.6.0",
+  "description": "识别并折叠 X 上的成人引流垃圾内容，通过 X 原生界面屏蔽高置信度账号，匿名自动同步共享屏蔽名单。",
   "icons": {
     "16": "assets/icons/icon16.png",
     "32": "assets/icons/icon32.png",
     "48": "assets/icons/icon48.png",
     "128": "assets/icons/icon128.png"
   },
-  "permissions": ["storage"],
-  "host_permissions": ["https://raw.githubusercontent.com/*"],
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://raw.githubusercontent.com/*", "https://*.workers.dev/*"],
   "background": {
     "service_worker": "src/background.js"
   },

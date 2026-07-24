@@ -2,9 +2,11 @@
   'use strict';
 
   const COMMUNITY_REPORTS_STORAGE_KEY = 'communityReports';
+  const AUTO_REPORTED_STORAGE_KEY = 'autoReported';
   const COMMUNITY_REPOSITORY = 'BaikkAce/x-yellow-blocker';
   const MAX_PENDING_REPORTS = 100;
   const MAX_REPORT_BATCH = 30;
+  const MAX_AUTO_REPORTED_CACHE = 500;
 
   function normalizeHandle(value) {
     const raw = String(value || '').trim();
@@ -68,8 +70,63 @@
     };
   }
 
+  // =========================================================================
+  //  Auto-report (anonymous, verifiable)
+  // =========================================================================
+
+  // Generate a 22-char anonymous client ID. Stored once in chrome.storage.local.
+  function generateClientId() {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let id = '';
+    for (let i = 0; i < 22; i++) id += chars[Math.floor(Math.random() * chars.length)];
+    return id;
+  }
+
+  async function getOrCreateClientId(storageGet, storageSet) {
+    const key = 'xybClientId';
+    const data = await storageGet(key);
+    if (data && data[key] && typeof data[key] === 'string' && data[key].length >= 8) {
+      return data[key];
+    }
+    const id = generateClientId();
+    await storageSet({ [key]: id });
+    return id;
+  }
+
+  // Build a verification payload from the detector verdict.
+  // The backend validates score >= 65 and non-empty reasons.
+  function buildVerificationPayload(verdict) {
+    if (!verdict) return null;
+    return {
+      score: Number(verdict.score || 0),
+      category: String(verdict.category || ''),
+      reasons: Array.isArray(verdict.reasons) ? verdict.reasons.slice(0, 10) : []
+    };
+  }
+
+  // Check and track already-auto-reported handles to avoid duplicate requests.
+  async function loadAutoReportedCache(storageGet) {
+    const data = await storageGet(AUTO_REPORTED_STORAGE_KEY);
+    const handles = data && data[AUTO_REPORTED_STORAGE_KEY];
+    return Array.isArray(handles) ? handles.map(normalizeHandle).filter(Boolean) : [];
+  }
+
+  async function saveAutoReportedCache(storageSet, cache, handle) {
+    const normalized = normalizeHandle(handle);
+    if (!normalized) return cache;
+    const next = [...cache, normalized].slice(-MAX_AUTO_REPORTED_CACHE);
+    await storageSet({ [AUTO_REPORTED_STORAGE_KEY]: next });
+    return next;
+  }
+
+  function wasAlreadyAutoReported(cache, handle) {
+    const normalized = normalizeHandle(handle);
+    return !!(normalized && cache.includes(normalized));
+  }
+
   globalThis.XybCommunitySharing = {
     COMMUNITY_REPORTS_STORAGE_KEY,
+    AUTO_REPORTED_STORAGE_KEY,
     COMMUNITY_REPOSITORY,
     MAX_REPORT_BATCH,
     normalizeHandle,
@@ -77,6 +134,12 @@
     enqueueCommunityReport,
     getCommunityReportBatch,
     buildCommunityIssueUrl,
-    markCommunityReportsSubmitted
+    markCommunityReportsSubmitted,
+    getOrCreateClientId,
+    generateClientId,
+    buildVerificationPayload,
+    loadAutoReportedCache,
+    saveAutoReportedCache,
+    wasAlreadyAutoReported
   };
 })();

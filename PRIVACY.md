@@ -16,19 +16,19 @@ The extension downloads public keyword and account blocklists over HTTPS from th
 
 ## Optional community contributions
 
-Community sharing is disabled by default and requires the user to enable it. After X confirms a block, the extension can place only the normalized X `@handle` in a local pending queue. It does not queue the post text, display name, profile data, URL, or browsing history.
+Community sharing is disabled by default and requires the user to enable it. After X confirms a block, the extension sends only the normalized X `@handle` together with an anonymous, per-install client identifier to a Cloudflare Worker over HTTPS. It does not transmit post text, display name, profile data, URLs, images, or browsing history.
 
-When the user clicks **Submit to GitHub**, the extension copies a batch of pending X handles to the clipboard and opens a public GitHub Issue form. The handles are not placed in URL query parameters. The user must paste, review, and submit the report while signed in to GitHub. The resulting Issue, reported handles, and GitHub contributor identity are public and are processed under GitHub's privacy policy.
+A single such report immediately publishes the handle to the public GitHub shared blocklist. Any user may dispute a shared handle from the extension popup; three independent disputes from distinct clients remove the handle from the shared list (self-healing), after which two independent re-reports are required to re-add it. The resulting public blocklist entries reside in the GitHub repository and are processed under GitHub's privacy policy.
 
 ## Use, sharing, and retention
 
 Data is used only to provide the extension's spam detection, blocking, muted-word synchronization, settings, and optional shared-blocklist features. It is not sold, used for advertising, or used for credit, insurance, employment, or lending decisions.
 
-Local data remains in the browser until the user clears extension data or removes the extension. Public GitHub reports and shared blocklist entries remain in the repository history unless removed by the repository owner after a correction request.
+Local data remains in the browser until the user clears extension data or removes the extension. Anonymous handle reports are aggregated by the Cloudflare Worker and published to the public GitHub shared blocklist; those entries remain in the repository history unless removed after a correction request.
 
 ## User control
 
-Users can keep community sharing disabled, clear extension data through Chrome, remove pending reports by removing the extension data, and add false positives to the local whitelist. Requests to remove a public shared-list entry can be filed in the GitHub repository.
+Users can keep community sharing disabled, clear extension data through Chrome, add false positives to the local whitelist, and dispute any shared handle directly from the popup (which triggers the self-healing removal once enough independent disputes accumulate). Requests to remove a public shared-list entry can also be filed in the GitHub repository.
 
 ## Security and limited use
 

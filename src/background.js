@@ -1,26 +1,93 @@
 /* global importScripts */
-importScripts('remote-lists.js');
+importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
 
 (function () {
   'use strict';
 
+  const { WORKER_URL } = globalThis.XybDefaults;
   const {
     REMOTE_LISTS_STORAGE_KEY,
     REMOTE_LIST_URLS,
     fetchRemoteBlocklists
   } = globalThis.XybRemoteLists;
+  const { getOrCreateClientId } = globalThis.XybCommunitySharing;
   const STATUS_KEY = 'remoteBlocklistsStatus';
   let refreshPromise = null;
 
-  chrome.runtime.onInstalled.addListener(() => refreshRemoteBlocklists());
-  chrome.runtime.onStartup.addListener(() => refreshRemoteBlocklists());
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (!message || message.type !== 'XYB_REFRESH_REMOTE_LISTS') return false;
-    refreshRemoteBlocklists()
-      .then(lists => sendResponse({ ok: true, lists }))
-      .catch(error => sendResponse({ ok: false, error: String(error && error.message || error) }));
-    return true;
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create('refreshRemoteLists', { periodInMinutes: 60 });
+    refreshRemoteBlocklists();
   });
+  chrome.runtime.onStartup.addListener(() => {
+    chrome.alarms.create('refreshRemoteLists', { periodInMinutes: 60 });
+    refreshRemoteBlocklists();
+  });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'refreshRemoteLists') refreshRemoteBlocklists();
+  });
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || typeof message.type !== 'string') return false;
+
+    if (message.type === 'XYB_REFRESH_REMOTE_LISTS') {
+      refreshRemoteBlocklists()
+        .then(lists => sendResponse({ ok: true, lists }))
+        .catch(error => sendResponse({ ok: false, error: String(error && error.message || error) }));
+      return true;
+    }
+
+    if (message.type === 'XYB_AUTO_REPORT') {
+      autoReportToWorker(message).then(sendResponse).catch(error =>
+        sendResponse({ ok: false, error: String(error && error.message || error) })
+      );
+      return true;
+    }
+
+    if (message.type === 'XYB_DISPUTE') {
+      disputeWithWorker(message).then(sendResponse).catch(error =>
+        sendResponse({ ok: false, error: String(error && error.message || error) })
+      );
+      return true;
+    }
+
+    return false;
+  });
+
+  async function autoReportToWorker(message) {
+    const { handles, clientId, verifications } = message;
+    if (!WORKER_URL) throw new Error('Worker URL not configured');
+
+    const resp = await fetch(`${WORKER_URL}/api/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handles, clientId, verifications })
+    });
+
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    return data;
+  }
+
+  async function disputeWithWorker(message) {
+    const { handle } = message;
+    if (!WORKER_URL) throw new Error('Worker URL not configured');
+
+    // Resolve the anonymous client id here so the popup never needs to touch it.
+    const clientId = await getOrCreateClientId(
+      key => chrome.storage.local.get(key),
+      items => chrome.storage.local.set(items)
+    );
+    if (!clientId) throw new Error('Failed to resolve client id');
+
+    const resp = await fetch(`${WORKER_URL}/api/dispute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle, clientId })
+    });
+
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    return data;
+  }
 
   function refreshRemoteBlocklists() {
     if (refreshPromise) return refreshPromise;
