@@ -10,7 +10,6 @@ importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
     REMOTE_LIST_URLS,
     fetchRemoteBlocklists
   } = globalThis.XybRemoteLists;
-  const { getOrCreateClientId } = globalThis.XybCommunitySharing;
   const STATUS_KEY = 'remoteBlocklistsStatus';
   let refreshPromise = null;
 
@@ -42,13 +41,6 @@ importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
       return true;
     }
 
-    if (message.type === 'XYB_DISPUTE') {
-      disputeWithWorker(message).then(sendResponse).catch(error =>
-        sendResponse({ ok: false, error: String(error && error.message || error) })
-      );
-      return true;
-    }
-
     return false;
   });
 
@@ -60,28 +52,6 @@ importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ handles, clientId, verifications })
-    });
-
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-    return data;
-  }
-
-  async function disputeWithWorker(message) {
-    const { handle } = message;
-    if (!WORKER_URL) throw new Error('Worker URL not configured');
-
-    // Resolve the anonymous client id here so the popup never needs to touch it.
-    const clientId = await getOrCreateClientId(
-      key => chrome.storage.local.get(key),
-      items => chrome.storage.local.set(items)
-    );
-    if (!clientId) throw new Error('Failed to resolve client id');
-
-    const resp = await fetch(`${WORKER_URL}/api/dispute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle, clientId })
     });
 
     const data = await resp.json();

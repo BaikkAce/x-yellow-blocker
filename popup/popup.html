@@ -39,13 +39,17 @@
       </section>
 
       <section class="group" aria-label="白名单">
-        <label for="whitelist">白名单</label>
+        <label for="whitelist">白名单（不会被屏蔽）</label>
         <textarea id="whitelist" spellcheck="false" rows="5" placeholder="@trusted_user"></textarea>
       </section>
 
-      <section class="group" aria-label="关注保护">
-        <label for="followedHandles">关注保护</label>
-        <textarea id="followedHandles" spellcheck="false" rows="4" placeholder=""></textarea>
+      <section class="group blocked-list" aria-label="已屏蔽账号">
+        <div class="sync-heading">
+          <span>已屏蔽账号</span>
+          <span id="blockedCount" class="sync-progress">0 个</span>
+        </div>
+        <p class="community-note">移除的账号会自动加入白名单，后续不会再被屏蔽（仅对你自己生效，不影响其他用户）。</p>
+        <div id="blockedList" class="blocked-list-items"></div>
       </section>
 
       <section class="stats" aria-label="统计">
@@ -77,15 +81,6 @@
           <span id="communityStatus">未开启</span>
           <button id="submitCommunityReports" type="button" hidden>手动提交</button>
         </div>
-      </section>
-
-      <section class="group shared-list" aria-label="共享屏蔽名单">
-        <div class="sync-heading">
-          <span>共享屏蔽名单</span>
-          <span id="sharedListCount" class="sync-progress">0 账号</span>
-        </div>
-        <p class="community-note">名单里的账号会被自动屏蔽。如果你认为某个账号是误判，点「误报」提交异议；累计 3 人异议后该账号会自动移出共享名单（自愈机制），之后需 2 人重新确认才会再次加入。</p>
-        <div id="sharedList" class="shared-list-items"></div>
       </section>
 
       <footer>

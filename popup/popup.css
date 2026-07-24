@@ -175,7 +175,7 @@ textarea {
   font-size: 12px;
 }
 
-.shared-list-items {
+.blocked-list-items {
   display: grid;
   gap: 6px;
   margin-top: 8px;
@@ -189,7 +189,7 @@ textarea {
   font-size: 12px;
 }
 
-.shared-item {
+.blocked-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -201,17 +201,17 @@ textarea {
   font-size: 12px;
 }
 
-.shared-item.disputed {
+.blocked-item.whitelisted {
   opacity: 0.55;
 }
 
-.shared-item .handle {
+.blocked-item .handle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.shared-item button {
+.blocked-item button {
   min-height: 26px;
   padding: 0 9px;
   font-size: 12px;
@@ -247,6 +247,6 @@ button {
   }
   .status, .stats span, .sync-progress, .remote-row, .community-note, .community-actions { color: #9ca3af; }
   .sync-actions button:first-child { background: #e5e7eb; color: #111827; }
-  .shared-item { background: #111827; border-color: #374151; }
+  .blocked-item { background: #111827; border-color: #374151; }
   .shared-empty { color: #9ca3af; }
 }
