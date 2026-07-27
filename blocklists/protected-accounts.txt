@@ -1,3 +1,8 @@
 # Owner-maintained accounts that community reports must never add.
 # Add one @handle per line after confirming a false positive.
 @artofspecuycky
+@solotradinginc
+@gryyfffindor
+@is6tank
+@martintevin
+@btcmos
