@@ -2,7 +2,8 @@
 // Runs on Cloudflare Workers + D1
 //
 // Flow:
-//   Extension POST /api/report { handles, clientId, verifications }
+//   Extension POST /api/report
+//     { handles, clientId, verifications, profiles, samples }
 //   Aggregates distinct clientIds per handle
 //   When a handle reaches MIN_REPORTERS (1) distinct clients:
 //     commits to GitHub blocklists/accounts.txt
@@ -14,7 +15,7 @@
 //     needs RE_ADD_THRESHOLD (2) distinct reporters to prevent oscillation.
 //
 // Defense layers (innermost → outermost):
-//   1. Request validation — body size, handle count, field types
+//   1. Request validation — body size, handle count, field types and text bounds
 //   2. Client reputation — auto-ban clients with high rejection rate
 //   3. Per-client rate limit — 50 reports / 20 disputes per clientId per hour
 //   4. Global rate limit — 1000 requests/minute total
@@ -26,6 +27,7 @@
 //   - No IP logging, no user tracking
 //   - Protected accounts never accepted
 //   - GitHub PAT stored as Cloudflare Secret, never in client code
+//   - Profiles and inert text samples need two independent confirmations
 
 // 1-person sync: first distinct reporter commits the handle to the shared list.
 const MIN_REPORTERS = 1;
@@ -36,8 +38,15 @@ const DISPUTE_THRESHOLD = 3;
 const MAX_REPORTS_PER_CLIENT_PER_HOUR = 50;
 const MAX_DISPUTES_PER_CLIENT_PER_HOUR = 20;
 const MAX_HANDLES_PER_REQUEST = 50;
-const MAX_BODY_BYTES = 16384; // 16 KB
+const MAX_BODY_BYTES = 32768; // 32 KB
 const GLOBAL_RATE_LIMIT_PER_MINUTE = 1000;
+const SAMPLE_CONFIRMATION_THRESHOLD = 2;
+const PROFILE_CONFIRMATION_THRESHOLD = 2;
+const MAX_SAMPLE_TEXT_LENGTH = 320;
+const MAX_PROFILE_NAME_LENGTH = 80;
+// Keep the generated JSON comfortably under the extension's 512K-character
+// response guard even when samples use CJK text.
+const MAX_PUBLISHED_SAMPLES = 800;
 
 // Client reputation: ban thresholds
 const MIN_REQUESTS_FOR_REPUTATION = 20;
@@ -135,7 +144,7 @@ async function commitToGitHub(env, newHandles) {
     const allHandles = [...existingHandles, ...toAdd].sort();
     const newContent = header + allHandles.join('\n') + '\n';
     // UTF-8 safe base64 encoding for Cloudflare Workers
-    const encodedContent = btoa(String.fromCharCode(...new TextEncoder().encode(newContent)));
+    const encodedContent = encodeGitHubContent(newContent);
     const putResp = await fetch(`${apiBase}/contents/blocklists/accounts.txt`, {
       method: 'PUT',
       headers,
@@ -202,7 +211,7 @@ async function removeHandlesFromGitHub(env, toRemove) {
     if (!removedCount) return true; // nothing to remove
 
     const newContent = kept.join('\n');
-    const encodedContent = btoa(String.fromCharCode(...new TextEncoder().encode(newContent)));
+    const encodedContent = encodeGitHubContent(newContent);
     const putResp = await fetch(`${apiBase}/contents/blocklists/accounts.txt`, {
       method: 'PUT',
       headers,
@@ -269,8 +278,294 @@ function isValidVerification(v) {
   if (!v || typeof v !== 'object') return false;
   const score = Number(v.score);
   if (!Number.isFinite(score) || score < 65) return false;
-  if (!v.category || v.category === 'protected' || v.category === 'normal') return false;
+  if (!['cn_adult_solicitation', 'adult_solicitation', 'remote_sample'].includes(v.category)) return false;
   if (!Array.isArray(v.reasons) || !v.reasons.length) return false;
+  if (v.reasons.length > 10 || v.reasons.some(reason => typeof reason !== 'string' || reason.length > 160)) return false;
+  return true;
+}
+
+function sanitizePublicText(value, maxLength) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, ' ')
+    .replace(/[<>{}\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function sanitizeProfile(value) {
+  if (!value || typeof value !== 'object') return null;
+  const displayName = sanitizePublicText(value.displayName, MAX_PROFILE_NAME_LENGTH);
+  let avatarUrl = '';
+  try {
+    const url = new URL(String(value.avatarUrl || ''));
+    if (url.protocol === 'https:' && url.hostname === 'pbs.twimg.com') {
+      avatarUrl = url.href.slice(0, 500);
+    }
+  } catch {}
+  return displayName || avatarUrl ? { displayName, avatarUrl } : null;
+}
+
+function sanitizeSample(value, expectedHandle, verification) {
+  if (!value || typeof value !== 'object' || value.context !== 'thread_reply') return null;
+  const handle = normalizeHandle(value.handle);
+  const text = sanitizePublicText(value.text, MAX_SAMPLE_TEXT_LENGTH);
+  const displayName = sanitizePublicText(value.displayName, MAX_PROFILE_NAME_LENGTH);
+  const category = String(value.category || '');
+  if (handle !== expectedHandle || [...text].length < 6) return null;
+  if (category !== verification.category) return null;
+  if (!['cn_adult_solicitation', 'adult_solicitation', 'remote_sample'].includes(category)) return null;
+  return { handle, displayName, text, category };
+}
+
+function normalizeSampleTemplate(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/https?:\/\/\S+|www\.\S+/gi, ' url ')
+    .replace(/@[a-z0-9_]{1,20}/gi, ' user ')
+    .replace(/\d+/g, ' 0 ')
+    .replace(/[^\p{L}\p{N}\p{Extended_Pictographic}]+/gu, '')
+    .slice(0, 400);
+}
+
+async function sampleFingerprint(text) {
+  const bytes = new TextEncoder().encode(normalizeSampleTemplate(text));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 32);
+}
+
+async function processProfileCandidate(env, handle, clientId, rawProfile) {
+  const profile = sanitizeProfile(rawProfile);
+  if (!profile) return null;
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO profile_reports (handle, client_id, display_name, avatar_url, reported_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(handle, client_id) DO UPDATE SET
+       display_name = excluded.display_name,
+       avatar_url = excluded.avatar_url,
+       reported_at = excluded.reported_at`
+  ).bind(handle, clientId, profile.displayName, profile.avatarUrl, now).run();
+
+  const winner = await env.DB.prepare(
+    `SELECT display_name, avatar_url, COUNT(DISTINCT client_id) AS cnt
+       FROM profile_reports
+      WHERE handle = ? AND reported_at >= ?
+      GROUP BY display_name, avatar_url
+      ORDER BY cnt DESC, MAX(reported_at) DESC
+      LIMIT 1`
+  ).bind(handle, now - 30 * 24 * 3600000).first();
+  if (!winner || Number(winner.cnt || 0) < PROFILE_CONFIRMATION_THRESHOLD) return null;
+  return {
+    handle,
+    displayName: sanitizePublicText(winner.display_name, MAX_PROFILE_NAME_LENGTH),
+    avatarUrl: sanitizeProfile({ avatarUrl: winner.avatar_url })?.avatarUrl || ''
+  };
+}
+
+async function processSampleCandidate(env, handle, clientId, rawSample, verification) {
+  const sample = sanitizeSample(rawSample, handle, verification);
+  if (!sample) return null;
+  const fingerprint = await sampleFingerprint(sample.text);
+  if (!/^[a-f0-9]{32}$/.test(fingerprint)) return null;
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO sample_reports
+       (fingerprint, client_id, handle, display_name, sample_text, category, reported_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(fingerprint, client_id) DO UPDATE SET
+       handle = excluded.handle,
+       display_name = excluded.display_name,
+       sample_text = excluded.sample_text,
+       category = excluded.category,
+       reported_at = excluded.reported_at`
+  ).bind(
+    fingerprint,
+    clientId,
+    handle,
+    sample.displayName,
+    sample.text,
+    sample.category,
+    now
+  ).run();
+
+  const countResult = await env.DB.prepare(
+    'SELECT COUNT(DISTINCT client_id) AS cnt FROM sample_reports WHERE fingerprint = ? AND reported_at >= ?'
+  ).bind(fingerprint, now - 30 * 24 * 3600000).first();
+  const reporters = Number(countResult && countResult.cnt || 0);
+  if (reporters < SAMPLE_CONFIRMATION_THRESHOLD) return null;
+  return {
+    fingerprint,
+    handle,
+    displayName: sample.displayName,
+    text: sample.text,
+    category: sample.category,
+    reporters,
+    confirmedAt: new Date(now).toISOString()
+  };
+}
+
+function decodeGitHubContent(value) {
+  const binary = atob(String(value || '').replace(/\s+/g, ''));
+  return new TextDecoder().decode(Uint8Array.from(binary, char => char.charCodeAt(0)));
+}
+
+function encodeGitHubContent(value) {
+  const bytes = new TextEncoder().encode(String(value || ''));
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function updateGitHubJson(env, path, fallback, transform, message) {
+  const { GITHUB_TOKEN, GITHUB_REPO } = env;
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return false;
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${path}`;
+  const headers = {
+    Authorization: `Bearer ${GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'xyb-worker/1.1',
+    'Content-Type': 'application/json',
+  };
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const getResp = await fetch(apiUrl, { headers });
+    let sha = '';
+    let current = fallback;
+    if (getResp.ok) {
+      const file = await getResp.json();
+      sha = file.sha;
+      try {
+        current = JSON.parse(decodeGitHubContent(file.content));
+      } catch {
+        current = fallback;
+      }
+    } else if (getResp.status !== 404) {
+      console.error(`[github-json] failed to read ${path}: ${getResp.status}`);
+      return false;
+    }
+
+    const next = transform(current);
+    const payload = {
+      message,
+      content: encodeGitHubContent(`${JSON.stringify(next, null, 2)}\n`),
+      branch: 'main',
+    };
+    if (sha) payload.sha = sha;
+    const putResp = await fetch(apiUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (putResp.ok) return true;
+    if (putResp.status !== 409) {
+      console.error(`[github-json] failed to write ${path}: ${putResp.status}`);
+      return false;
+    }
+  }
+  return false;
+}
+
+async function commitProfilesToGitHub(env, updates) {
+  const rows = Object.values(updates || {}).filter(Boolean);
+  if (!rows.length) return true;
+  return updateGitHubJson(
+    env,
+    'blocklists/profiles.json',
+    { profiles: [] },
+    current => {
+      const existing = Array.isArray(current) ? current : (Array.isArray(current.profiles) ? current.profiles : []);
+      const byHandle = new Map();
+      for (const row of existing) {
+        const handle = normalizeHandle(row && row.handle);
+        const profile = sanitizeProfile(row);
+        if (handle && profile) byHandle.set(handle, { handle, ...profile });
+      }
+      for (const row of rows) {
+        const handle = normalizeHandle(row.handle);
+        const profile = sanitizeProfile(row);
+        if (handle && profile) byHandle.set(handle, { handle, ...profile });
+      }
+      return { profiles: [...byHandle.values()].sort((a, b) => a.handle.localeCompare(b.handle)).slice(0, MAX_ACCOUNTS_FILE_LINES) };
+    },
+    `[auto] Update ${rows.length} confirmed public profile(s) at ${new Date().toISOString()}`
+  );
+}
+
+async function commitSamplesToGitHub(env, updates) {
+  const rows = Array.isArray(updates) ? updates : [];
+  if (!rows.length) return true;
+  return updateGitHubJson(
+    env,
+    'blocklists/lure-samples.json',
+    { version: 1, generatedAt: '', samples: [] },
+    current => {
+      const existing = current && Number(current.version) === 1 && Array.isArray(current.samples)
+        ? current.samples
+        : [];
+      const byFingerprint = new Map();
+      for (const row of [...existing, ...rows]) {
+        if (!row || !/^[a-f0-9]{32}$/.test(String(row.fingerprint || ''))) continue;
+        const handle = normalizeHandle(row.handle);
+        const text = sanitizePublicText(row.text, MAX_SAMPLE_TEXT_LENGTH);
+        const displayName = sanitizePublicText(row.displayName, MAX_PROFILE_NAME_LENGTH);
+        const reporters = Number(row.reporters || 0);
+        if (!handle || [...text].length < 6 || reporters < SAMPLE_CONFIRMATION_THRESHOLD) continue;
+        byFingerprint.set(row.fingerprint, {
+          fingerprint: row.fingerprint,
+          handle,
+          displayName,
+          text,
+          category: ['cn_adult_solicitation', 'adult_solicitation', 'remote_sample'].includes(row.category)
+            ? row.category
+            : 'adult_solicitation',
+          reporters: Math.min(100000, Math.floor(reporters)),
+          confirmedAt: String(row.confirmedAt || new Date().toISOString()).slice(0, 40)
+        });
+      }
+      const samples = [...byFingerprint.values()]
+        .sort((a, b) => String(b.confirmedAt).localeCompare(String(a.confirmedAt)))
+        .slice(0, MAX_PUBLISHED_SAMPLES);
+      return { version: 1, generatedAt: new Date().toISOString(), samples };
+    },
+    `[auto] Update ${rows.length} confirmed lure sample(s) at ${new Date().toISOString()}`
+  );
+}
+
+async function removeCommunityDataFromGitHub(env, handles) {
+  const removeSet = new Set((handles || []).map(normalizeHandle).filter(Boolean));
+  if (!removeSet.size) return true;
+  await Promise.all([
+    updateGitHubJson(
+      env,
+      'blocklists/profiles.json',
+      { profiles: [] },
+      current => ({
+        profiles: (Array.isArray(current) ? current : (Array.isArray(current.profiles) ? current.profiles : []))
+          .filter(row => !removeSet.has(normalizeHandle(row && row.handle)))
+      }),
+      `[auto] Remove disputed profile data at ${new Date().toISOString()}`
+    ),
+    updateGitHubJson(
+      env,
+      'blocklists/lure-samples.json',
+      { version: 1, generatedAt: '', samples: [] },
+      current => ({
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        samples: (current && Array.isArray(current.samples) ? current.samples : [])
+          .filter(row => !removeSet.has(normalizeHandle(row && row.handle)))
+      }),
+      `[auto] Remove disputed lure samples at ${new Date().toISOString()}`
+    )
+  ]);
   return true;
 }
 
@@ -346,7 +641,10 @@ async function checkRateLimit(env, clientId, prefix) {
   const oneHourAgo = Date.now() - 3600000;
   await db.prepare('DELETE FROM rate_limits WHERE client_id = ? AND timestamp < ?').bind(key, oneHourAgo).run();
   const result = await db.prepare('SELECT COUNT(*) as cnt FROM rate_limits WHERE client_id = ?').bind(key).first();
-  return (result && result.cnt || 0) < MAX_REPORTS_PER_CLIENT_PER_HOUR;
+  const limit = prefix === 'dispute'
+    ? MAX_DISPUTES_PER_CLIENT_PER_HOUR
+    : MAX_REPORTS_PER_CLIENT_PER_HOUR;
+  return (result && result.cnt || 0) < limit;
 }
 
 async function recordRateEvent(env, clientId, prefix) {
@@ -383,6 +681,11 @@ async function cleanupOldData(env) {
 
   // Clean demoted accounts after 30 days (allow natural re-accumulation)
   await db.prepare('DELETE FROM demoted_accounts WHERE demoted_at < ?').bind(thirtyDaysAgo).run();
+
+  // Public profile and lure-template confirmations use a 30-day consensus
+  // window, so older candidate rows are no longer useful.
+  await db.prepare('DELETE FROM profile_reports WHERE reported_at < ?').bind(thirtyDaysAgo).run();
+  await db.prepare('DELETE FROM sample_reports WHERE reported_at < ?').bind(thirtyDaysAgo).run();
 }
 
 
@@ -404,7 +707,7 @@ export default {
 
     // Health check
     if (request.method === 'GET' && url.pathname === '/api/health') {
-      return jsonResponse({ ok: true, version: '1.0.0' });
+      return jsonResponse({ ok: true, version: '1.1.0' });
     }
 
     // Get current approved accounts + dispute counts (public)
@@ -436,7 +739,7 @@ export default {
         return jsonResponse({ error: 'invalid json' }, 400);
       }
 
-      const { handles, clientId, verifications } = body;
+      const { handles, clientId, verifications, profiles, samples } = body;
       if (!Array.isArray(handles) || !handles.length || !clientId || typeof clientId !== 'string') {
         return jsonResponse({ error: 'missing handles, clientId, or verifications' }, 400);
       }
@@ -473,6 +776,8 @@ export default {
 
       const results = [];
       const newlyApproved = [];
+      const confirmedProfiles = {};
+      const confirmedSamples = [];
       let rejectedInThisRequest = 0;
       let acceptedInThisRequest = 0;
 
@@ -481,7 +786,35 @@ export default {
         if (!normalized) continue;
         if (protectedAccounts.has(normalized)) continue;
 
-        // Check already approved
+        // Verify the detection data
+        const verification = verifications && (verifications[handle] || verifications[normalized]);
+        if (!isValidVerification(verification)) {
+          results.push({ handle: normalized, status: 'invalid_verification' });
+          rejectedInThisRequest++;
+          continue;
+        }
+
+        // Profile and sample candidates are sanitized, rate-limited data.
+        // They never become executable rules. Each needs independent
+        // confirmation before publication to GitHub.
+        const confirmedProfile = await processProfileCandidate(
+          env,
+          normalized,
+          clientId,
+          profiles && (profiles[handle] || profiles[normalized])
+        );
+        if (confirmedProfile) confirmedProfiles[normalized] = confirmedProfile;
+
+        const confirmedSample = await processSampleCandidate(
+          env,
+          normalized,
+          clientId,
+          samples && (samples[handle] || samples[normalized]),
+          verification
+        );
+        if (confirmedSample) confirmedSamples.push(confirmedSample);
+
+        // Check already approved after processing fresh public metadata.
         const alreadyApproved = await env.DB
           .prepare('SELECT handle FROM approved_accounts WHERE handle = ?')
           .bind(normalized)
@@ -489,14 +822,6 @@ export default {
         if (alreadyApproved) {
           results.push({ handle: normalized, status: 'already_approved' });
           acceptedInThisRequest++;
-          continue;
-        }
-
-        // Verify the detection data
-        const verification = verifications && verifications[handle];
-        if (!isValidVerification(verification)) {
-          results.push({ handle: normalized, status: 'invalid_verification' });
-          rejectedInThisRequest++;
           continue;
         }
 
@@ -557,6 +882,12 @@ export default {
       // Commit newly approved accounts to GitHub (non-blocking)
       if (newlyApproved.length > 0) {
         ctx.waitUntil(commitToGitHub(env, newlyApproved));
+      }
+      if (Object.keys(confirmedProfiles).length > 0) {
+        ctx.waitUntil(commitProfilesToGitHub(env, confirmedProfiles));
+      }
+      if (confirmedSamples.length > 0) {
+        ctx.waitUntil(commitSamplesToGitHub(env, confirmedSamples));
       }
 
       // Periodic cleanup (non-blocking, runs once per ~100 requests probabilistically)
@@ -643,7 +974,10 @@ export default {
 
         if (approvedRow) {
           await env.DB.prepare('DELETE FROM approved_accounts WHERE handle = ?').bind(normalized).run();
-          ctx.waitUntil(removeHandlesFromGitHub(env, [normalized]));
+          ctx.waitUntil(Promise.all([
+            removeHandlesFromGitHub(env, [normalized]),
+            removeCommunityDataFromGitHub(env, [normalized])
+          ]));
         }
         // Mark demoted so re-adding needs RE_ADD_THRESHOLD distinct reporters
         await env.DB
