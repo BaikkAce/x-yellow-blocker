@@ -1,41 +1,36 @@
 # Privacy Policy for X Yellow Blocker
 
-Last updated: July 23, 2026
+Last updated: July 29, 2026
 
-X Yellow Blocker is a browser extension that identifies likely adult-solicitation spam on X and can use X's visible interface to hide content, block accounts, and add muted words.
+X Yellow Blocker identifies likely adult-solicitation spam in replies under an opened X post. It can locally hide matching replies, use X's visible interface to block their authors, and add muted words at the user's request.
 
-## Data processed locally
+## Local processing
 
-While the extension is enabled on X, it processes the visible account handle, display name, post text, link destinations, reply context, and X sensitive-content labels needed to evaluate posts. This processing occurs locally in the browser. Post text, display names, link destinations, and browsing history are not sent to the developer or retained by the extension.
+The extension locally processes visible handles, display names, reply text, links, reply context, avatars, and X sensitive-content labels needed for detection. It stores settings, statistics, successfully blocked handles, limited public profile details for locally blocked accounts, diagnostic events, remote-rule cache data, and muted-word synchronization progress in `chrome.storage.local`.
 
-The extension stores settings, statistics, protected handles, successfully blocked handles, remote-list cache data, and muted-word synchronization progress in `chrome.storage.local` on the user's device.
+The extension does not read direct messages, cookies, passwords, browsing history, or unrelated page content.
 
-## Remote blocklists
+## Remote recognition data
 
-The extension downloads public keyword and account blocklists over HTTPS from the `BaikkAce/x-yellow-blocker` GitHub repository. GitHub may receive ordinary network metadata such as the request IP address and user agent under GitHub's own privacy policy. The extension does not attach X page content or a persistent extension identifier to these requests.
+The extension downloads two public inert-data files over HTTPS from `BaikkAce/x-yellow-blocker`:
 
-## Optional community contributions
+- `blocklists/keywords.txt`
+- `blocklists/lure-samples.json`
 
-Community sharing is disabled by default and requires the user to enable it. After X confirms a block, the extension sends only the normalized X `@handle` together with an anonymous, per-install client identifier to a Cloudflare Worker over HTTPS. It does not transmit post text, display name, profile data, URLs, images, or browsing history.
+These files contain keywords and sanitized language examples only. They do not contain account blocklists and cannot provide JavaScript, HTML, regular expressions, WebAssembly, selectors, thresholds, or executable code. GitHub may receive ordinary request metadata under GitHub's privacy policy.
 
-A single such report immediately publishes the handle to the public GitHub shared blocklist. Any user may dispute a shared handle from the extension popup; three independent disputes from distinct clients remove the handle from the shared list (self-healing), after which two independent re-reports are required to re-add it. The resulting public blocklist entries reside in the GitHub repository and are processed under GitHub's privacy policy.
+## No account sharing or uploads
 
-## Use, sharing, and retention
+Version 0.11.0 does not upload blocked accounts, handles, display names, avatars, reply text, browsing activity, cookies, installation identifiers, or diagnostic logs. It does not call the former community-reporting Worker.
 
-Data is used only to provide the extension's spam detection, blocking, muted-word synchronization, settings, and optional shared-blocklist features. It is not sold, used for advertising, or used for credit, insurance, employment, or lending decisions.
+## User control and retention
 
-Local data remains in the browser until the user clears extension data or removes the extension. Anonymous handle reports are aggregated by the Cloudflare Worker and published to the public GitHub shared blocklist; those entries remain in the repository history unless removed after a correction request.
+Local data remains until the user clears extension data or removes the extension. Users can disable detection, disable automatic blocking, add local whitelist entries, remove locally recorded blocked handles, clear statistics, and clear diagnostic logs.
 
-## User control
-
-Users can keep community sharing disabled, clear extension data through Chrome, add false positives to the local whitelist, and dispute any shared handle directly from the popup (which triggers the self-healing removal once enough independent disputes accumulate). Requests to remove a public shared-list entry can also be filed in the GitHub repository.
+No personal data is sold, used for advertising, or used for credit, insurance, employment, or lending decisions.
 
 ## Security and limited use
 
-All remote communication initiated by the extension uses HTTPS. The extension does not contain a GitHub write token, does not execute remotely hosted code, and requests only permissions needed for its user-facing functions.
+All remote communication initiated by the extension uses HTTPS. The extension contains no GitHub write token and does not execute remotely hosted code. Use of Chrome API information follows the Chrome Web Store User Data Policy, including Limited Use requirements.
 
-The use of information received from Chrome APIs adheres to the Chrome Web Store User Data Policy, including the Limited Use requirements.
-
-## Contact
-
-Privacy and correction requests: <https://github.com/BaikkAce/x-yellow-blocker/issues>
+Contact: <https://github.com/BaikkAce/x-yellow-blocker/issues>

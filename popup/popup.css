@@ -44,6 +44,16 @@ h1 {
   gap: 9px;
 }
 
+.scope-note {
+  margin: 0 0 3px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 label {
   display: grid;
   gap: 5px;
@@ -152,27 +162,11 @@ textarea {
   color: #fff;
 }
 
-.community-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 650;
-}
-
 .community-note {
   margin: 7px 0 9px;
   color: #6b7280;
   font-size: 11px;
   line-height: 1.4;
-}
-
-.community-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: #6b7280;
-  font-size: 12px;
 }
 
 .blocked-list-items {
@@ -204,26 +198,34 @@ textarea {
   opacity: 0.55;
 }
 
+.diagnostic-log {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 220px;
+  margin: 0 0 8px;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+  color: #374151;
+  font: 10px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diagnostic-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .blocked-avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
-  background: #e5e7eb;
-  position: relative;
-}
-/* Fallback letter shown via pseudo-element when image fails */
-.blocked-avatar[data-fallback]::after {
-  content: attr(data-fallback);
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #6b7280;
-  font-weight: 700;
-  font-size: 14px;
 }
 
 .blocked-avatar-placeholder {
@@ -292,8 +294,10 @@ button {
     border-color: #374151;
     color: #e5e7eb;
   }
-  .status, .stats span, .sync-progress, .remote-row, .community-note, .community-actions { color: #9ca3af; }
+  .status, .stats span, .sync-progress, .remote-row, .community-note { color: #9ca3af; }
   .sync-actions button:first-child { background: #e5e7eb; color: #111827; }
   .blocked-item { background: #111827; border-color: #374151; }
   .shared-empty { color: #9ca3af; }
+  .scope-note { background: #172554; color: #bfdbfe; }
+  .diagnostic-log { background: #111827; border-color: #374151; color: #d1d5db; }
 }

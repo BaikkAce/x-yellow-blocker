@@ -28,7 +28,7 @@ test('creates a deterministic deduplicated sync queue', () => {
   assert.equal(state.active, true);
   assert.deepEqual(state.words, ['同城上门', 'sao货']);
   assert.equal(state.index, 0);
-  assert.equal(state.phase, 'navigate');
+  assert.equal(state.phase, 'scan');
 });
 
 test('advances successful and skipped mute words without losing progress', () => {

@@ -14,6 +14,7 @@
       </header>
 
       <section class="group switches" aria-label="基础开关">
+        <p class="scope-note">仅检测帖子详情页评论区中的黄色引流；主帖、首页、搜索和用户主页内容不会被屏蔽。</p>
         <label><input id="enabled" type="checkbox"> 启用检测</label>
         <label><input id="hideDetected" type="checkbox"> 命中后折叠推文</label>
         <label><input id="autoBlock" type="checkbox"> 自动加入 X 屏蔽</label>
@@ -69,17 +70,21 @@
           <button id="cancelMuteWords" type="button" hidden>停止</button>
         </div>
         <div class="remote-row">
-          <span id="remoteListStatus">远程名单未更新</span>
-          <button id="refreshRemoteLists" type="button">更新名单</button>
+          <span id="remoteListStatus">识别数据未更新</span>
+          <button id="refreshRemoteLists" type="button">更新识别数据</button>
         </div>
+        <p class="community-note">每小时从 GitHub 同步屏蔽词和引流语言样本，不同步账号，不上传任何用户数据。</p>
       </section>
 
-      <section class="group community" aria-label="共享屏蔽账号">
-        <label class="community-toggle"><input id="communitySharingEnabled" type="checkbox"> 匿名自动上报屏蔽账号</label>
-        <p class="community-note" id="communityNote">开启后，你屏蔽的账号会通过 Cloudflare Worker 匿名上报，并立即同步到共享名单（任何人屏蔽都会同步）。</p>
-        <div class="community-actions">
-          <span id="communityStatus">未开启</span>
-          <button id="submitCommunityReports" type="button" hidden>手动提交</button>
+      <section class="group diagnostics" aria-label="运行日志">
+        <div class="sync-heading">
+          <span>自动屏蔽运行日志</span>
+          <span id="diagnosticCount" class="sync-progress">0 条</span>
+        </div>
+        <pre id="diagnosticLog" class="diagnostic-log">暂无日志</pre>
+        <div class="diagnostic-actions">
+          <button id="copyDiagnosticLog" type="button">复制日志</button>
+          <button id="clearDiagnosticLog" type="button">清空</button>
         </div>
       </section>
 
@@ -93,7 +98,6 @@
     <script src="../src/detector.js"></script>
     <script src="../src/mute-words.js"></script>
     <script src="../src/remote-lists.js"></script>
-    <script src="../src/community-sharing.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

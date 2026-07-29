@@ -1,14 +1,14 @@
-# Blocklists
+# Remote recognition data
 
-The extension fetches these public lists from the default branch and caches the last complete successful refresh.
+Version 0.11.0 reads only:
 
-- `keywords.txt`: high-confidence adult-solicitation phrases. A match adds enough detector score to hide the post and queue its author for X's native Block flow. The popup also includes these terms when syncing X muted words.
-- `accounts.txt`: confirmed spam-author handles. Exact handle matches are immediate block candidates.
-- `protected-accounts.txt`: owner-reviewed accounts that community aggregation must never add.
+- `keywords.txt`: curated muted/detection words, one per line.
+- `lure-samples.json`: curated language and display-name patterns without account IDs.
 
-Format rules:
+Legacy files are no longer requested by the extension:
 
-- One entry per line.
-- Empty lines and lines beginning with `#` are ignored.
-- Account entries may be `@handle`, bare handles, or full `x.com`/`twitter.com` profile URLs.
-- Keep keyword entries specific. Broad words create false positives for every extension user.
+- `accounts.txt`
+- `protected-accounts.txt`
+- `profiles.json`
+
+See [`../REMOTE-DATA.md`](../REMOTE-DATA.md) for the format and safety limits.

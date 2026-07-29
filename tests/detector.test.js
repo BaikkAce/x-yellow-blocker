@@ -265,8 +265,9 @@ test('defaults to automatic X blocking after migration', () => {
 
   assert.equal(settings.autoBlock, true);
   assert.equal(settings.autoBlockThreshold, settings.hideThreshold);
-  assert.equal(settings.communitySharingEnabled, false);
-  assert.equal(settings.settingsVersion, 3);
+  assert.equal('communitySharingEnabled' in settings, false);
+  assert.equal('remoteAccountSyncEnabled' in settings, false);
+  assert.equal(settings.settingsVersion, 6);
 });
 
 test('does not treat a suspicious-looking handle as evidence by itself', () => {

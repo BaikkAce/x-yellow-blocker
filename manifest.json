@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "X Yellow Blocker",
-  "version": "0.6.0",
-  "description": "识别并折叠 X 上的成人引流垃圾内容，通过 X 原生界面屏蔽高置信度账号，匿名自动同步共享屏蔽名单。",
+  "version": "0.11.0",
+  "description": "识别 X 帖子评论区中的成人引流垃圾内容，通过 GitHub 自动同步屏蔽词与引流语言样本，不同步任何账号名单。",
   "icons": {
     "16": "assets/icons/icon16.png",
     "32": "assets/icons/icon32.png",
@@ -10,7 +10,7 @@
     "128": "assets/icons/icon128.png"
   },
   "permissions": ["storage", "alarms"],
-  "host_permissions": ["https://raw.githubusercontent.com/*", "https://*.workers.dev/*", "https://pbs.twimg.com/*"],
+  "host_permissions": ["https://raw.githubusercontent.com/BaikkAce/x-yellow-blocker/*", "https://pbs.twimg.com/*"],
   "background": {
     "service_worker": "src/background.js"
   },
@@ -22,7 +22,7 @@
         "https://mobile.x.com/*",
         "https://mobile.twitter.com/*"
       ],
-      "js": ["src/defaults.js", "src/detector.js", "src/x-ui-text.js", "src/mute-words.js", "src/remote-lists.js", "src/community-sharing.js", "src/content.js"],
+      "js": ["src/defaults.js", "src/detector.js", "src/x-ui-text.js", "src/mute-words.js", "src/remote-lists.js", "src/content.js"],
       "css": ["src/styles.css"],
       "run_at": "document_idle"
     }

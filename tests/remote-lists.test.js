@@ -6,39 +6,53 @@ await import('../src/defaults.js');
 await import('../src/detector.js');
 
 const {
+  REMOTE_LIST_URLS,
   parseKeywordList,
-  parseAccountList,
+  parseLureSamples,
   createRemoteBlocklists,
-  normalizeBlockedAccount,
   fetchRemoteBlocklists
 } = globalThis.XybRemoteLists;
 const { evaluateTweet } = globalThis.XybDetector;
 
-test('parses public blocklists with comments, blanks, and duplicates', () => {
-  const keywords = parseKeywordList('# comment\n同城上门\n\nsao货\n同城上门\n');
-  const accounts = parseAccountList('# spam authors\n@Spam_User\nspam_user\nhttps://x.com/AnotherSpam\n');
-
-  assert.deepEqual(keywords, ['同城上门', 'sao货']);
-  assert.deepEqual(accounts, ['@spam_user', '@anotherspam']);
-  assert.equal(normalizeBlockedAccount('https://twitter.com/Test_User/status/1'), '@test_user');
+const sampleJson = JSON.stringify({
+  version: 2,
+  updatedAt: '2026-07-29T00:00:00Z',
+  samples: [{
+    id: '2026-07-homepage-lure',
+    displayName: '同城搭子',
+    text: '哥哥看看主页，今晚可以见面',
+    category: 'cn_adult_solicitation'
+  }]
 });
 
-test('creates a cacheable remote list snapshot', () => {
+test('parses only safe keyword and lure-language data', () => {
+  const keywords = parseKeywordList('# comment\n同城上门\n\nsao货\n同城上门\n<script>\n');
+  const samples = parseLureSamples(sampleJson);
+
+  assert.deepEqual(keywords, ['同城上门', 'sao货']);
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].id, '2026-07-homepage-lure');
+  assert.deepEqual(Object.keys(REMOTE_LIST_URLS).sort(), ['keywords', 'lureSamples']);
+});
+
+test('creates a cache snapshot without account data', () => {
   const snapshot = createRemoteBlocklists({
     keywordsText: '同城上门\n主页能打',
-    accountsText: '@spam_one\n@spam_two',
+    lureSamplesText: sampleJson,
     fetchedAt: 123
   });
 
   assert.deepEqual(snapshot.keywords, ['同城上门', '主页能打']);
-  assert.deepEqual(snapshot.accounts, ['@spam_one', '@spam_two']);
+  assert.equal(snapshot.lureSamples.length, 1);
   assert.equal(snapshot.fetchedAt, 123);
+  assert.equal(snapshot.source, 'github-curated-data');
+  assert.equal('accounts' in snapshot, false);
 });
 
-test('fetches both public lists into one cache snapshot', async () => {
+test('fetches both recognition files atomically', async () => {
   const responses = new Map([
     ['keywords-url', '同城上门\nsao货'],
-    ['accounts-url', '@spam_one\n@spam_two']
+    ['samples-url', sampleJson]
   ]);
   const fakeFetch = async url => ({
     ok: responses.has(url),
@@ -48,15 +62,14 @@ test('fetches both public lists into one cache snapshot', async () => {
 
   const snapshot = await fetchRemoteBlocklists(fakeFetch, {
     keywords: 'keywords-url',
-    accounts: 'accounts-url'
+    lureSamples: 'samples-url'
   });
 
   assert.deepEqual(snapshot.keywords, ['同城上门', 'sao货']);
-  assert.deepEqual(snapshot.accounts, ['@spam_one', '@spam_two']);
-  assert.equal(snapshot.source, 'github');
+  assert.equal(snapshot.lureSamples.length, 1);
 });
 
-test('rejects a partial remote refresh so callers keep the previous cache', async () => {
+test('rejects a partial refresh so callers keep the previous cache', async () => {
   const fakeFetch = async url => ({
     ok: url === 'keywords-url',
     status: url === 'keywords-url' ? 200 : 503,
@@ -64,33 +77,41 @@ test('rejects a partial remote refresh so callers keep the previous cache', asyn
   });
 
   await assert.rejects(
-    fetchRemoteBlocklists(fakeFetch, { keywords: 'keywords-url', accounts: 'accounts-url' }),
-    /accounts list request failed: 503/
+    fetchRemoteBlocklists(fakeFetch, { keywords: 'keywords-url', lureSamples: 'samples-url' }),
+    /lure samples request failed: 503/
   );
 });
 
-test('remote blocked accounts are always auto-block candidates', () => {
-  const result = evaluateTweet({
-    handle: '@Known_Spam',
-    displayName: 'Normal User',
-    tweetText: 'ordinary text',
-    isReply: false,
-    externalLinks: []
-  }, { blockedAccounts: ['@known_spam'] });
-
-  assert.equal(result.shouldAutoBlock, true);
-  assert.ok(result.reasons.includes('remote blocked account'));
-});
-
-test('remote keywords augment the detector without changing built-in rules', () => {
+test('remote keywords augment reply detection without account matching', () => {
   const result = evaluateTweet({
     handle: '@unknown_user',
     displayName: 'Normal User',
     tweetText: '新型暗号词 @target',
-    isReply: false,
+    isReply: true,
     externalLinks: []
   }, { remoteKeywords: ['新型暗号词'] });
 
   assert.equal(result.shouldAutoBlock, true);
   assert.ok(result.reasons.includes('remote blocked keyword: 新型暗号词'));
+});
+
+test('remote language samples affect replies but not ordinary timeline posts', () => {
+  const samples = parseLureSamples(sampleJson);
+  const reply = evaluateTweet({
+    handle: '@unknown_user',
+    displayName: '同城搭子',
+    tweetText: '哥哥看看主页 今晚可以见面',
+    isReply: true,
+    externalLinks: []
+  }, { remoteLureSamples: samples });
+  const timeline = evaluateTweet({
+    handle: '@unknown_user',
+    displayName: '同城搭子',
+    tweetText: '哥哥看看主页 今晚可以见面',
+    isReply: false,
+    externalLinks: []
+  }, { remoteLureSamples: samples });
+
+  assert.equal(reply.shouldAutoBlock, true);
+  assert.equal(timeline.shouldAutoBlock, false);
 });

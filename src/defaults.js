@@ -2,15 +2,14 @@
   'use strict';
 
   const DEFAULT_SETTINGS = Object.freeze({
-    settingsVersion: 3,
+    settingsVersion: 6,
     enabled: true,
     hideDetected: true,
     autoBlock: true,
     hideThreshold: 65,
     autoBlockThreshold: 65,
-    blockDelayMs: 2500,
+    blockDelayMs: 900,
     maxBlocksPerSession: 30,
-    communitySharingEnabled: false,
     whitelist: [],
     followedHandles: [],
     blockedHandles: [],
@@ -41,20 +40,18 @@
       merged.settingsVersion = base.settingsVersion;
       merged.autoBlock = base.autoBlock;
       merged.autoBlockThreshold = base.autoBlockThreshold;
+      merged.blockDelayMs = base.blockDelayMs;
     }
+    // v6 permanently removes community account upload and remote account
+    // blocking. Drop stale values left by earlier versions.
+    delete merged.communitySharingEnabled;
+    delete merged.remoteAccountSyncEnabled;
     return merged;
   }
-
-  // Cloudflare Worker URL — deployed backend for anonymous community reporting
-  const WORKER_URL = 'https://xyb-reports.xyb-blocker.workers.dev';
-
-  const CLIENT_ID_STORAGE_KEY = 'xybClientId';
 
   globalThis.XybDefaults = {
     DEFAULT_SETTINGS,
     cloneDefaultSettings,
-    mergeSettings,
-    WORKER_URL,
-    CLIENT_ID_STORAGE_KEY
+    mergeSettings
   };
 })();

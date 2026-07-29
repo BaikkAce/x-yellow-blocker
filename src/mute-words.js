@@ -65,8 +65,10 @@
       index: 0,
       added: 0,
       skipped: 0,
+      existing: 0,
       failures: [],
-      phase: 'navigate',
+      existingWords: [],
+      phase: 'scan',
       currentWord: '',
       startedAt: Date.now(),
       updatedAt: Date.now()
@@ -79,7 +81,8 @@
     const index = Math.max(0, Number(current.index || 0));
     const word = words[index] || current.currentWord || '';
     const added = Number(current.added || 0) + (result.outcome === 'added' ? 1 : 0);
-    const skipped = Number(current.skipped || 0) + (result.outcome === 'skipped' ? 1 : 0);
+    const skipped = Number(current.skipped || 0) + (['skipped', 'existing'].includes(result.outcome) ? 1 : 0);
+    const existing = Number(current.existing || 0) + (result.outcome === 'existing' ? 1 : 0);
     const failures = Array.isArray(current.failures) ? [...current.failures] : [];
 
     if (result.outcome === 'skipped') {
@@ -94,6 +97,7 @@
       index: nextIndex,
       added,
       skipped,
+      existing,
       failures,
       active: !complete,
       phase: complete ? 'complete' : 'navigate',
