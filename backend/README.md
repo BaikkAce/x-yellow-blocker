@@ -1,6 +1,8 @@
 # XYB Community Reports Backend
 
-Cloudflare Worker + D1 that aggregates anonymous community reports and commits to GitHub.
+Cloudflare Worker + D1 that aggregates anonymous community reports and commits
+strictly validated data files to GitHub. Recognition code always stays inside
+the packaged extension.
 
 ## Deployment
 
@@ -99,7 +101,7 @@ For paid plans, you can also configure:
 
 ### POST /api/report
 
-**Limits**: max 50 handles per request, max 16KB body
+**Limits**: max 50 handles per request, max 32KB body
 
 ```json
 {
@@ -111,9 +113,30 @@ For paid plans, you can also configure:
       "category": "cn_adult_solicitation",
       "reasons": ["explicit Chinese adult term", "contact lure"]
     }
+  },
+  "profiles": {
+    "@spam_user": {
+      "displayName": "public display name",
+      "avatarUrl": "https://pbs.twimg.com/profile_images/..."
+    }
+  },
+  "samples": {
+    "@spam_user": {
+      "handle": "@spam_user",
+      "displayName": "public display name",
+      "text": "short public comment that was actually blocked",
+      "category": "cn_adult_solicitation",
+      "context": "thread_reply"
+    }
   }
 }
 ```
+
+The Worker strips controls and markup-like characters, bounds all lengths,
+allows avatars only from `pbs.twimg.com`, and never accepts JavaScript, HTML,
+regular expressions, or other executable rules. Profile data and normalized
+comment templates require matching reports from two distinct anonymous
+installations within 30 days before publication.
 
 ### Error responses
 
@@ -121,7 +144,7 @@ For paid plans, you can also configure:
 |--------|---------|
 | 400 | Invalid request (bad JSON, missing fields, too many handles) |
 | 403 | Client permanently banned (excessive invalid verification payloads) |
-| 413 | Request body too large (>16KB) |
+| 413 | Request body too large (>32KB) |
 | 429 | Rate limited (per-client or global) |
 
 ## Security properties
@@ -130,8 +153,12 @@ For paid plans, you can also configure:
 - Rate limit: 50 reports/hour per clientId + 1000 req/min global
 - Client reputation: auto-ban after 20+ requests with >80% rejection rate
 - Verification: each report requires score ≥ 65 + detection reasons
-- Threshold: 3 distinct clients required before committing to GitHub
+- Account threshold: first valid report publishes the handle; disputed handles
+  need two fresh reporters before re-entry
+- Profile/sample threshold: two distinct clients must confirm matching
+  sanitized public data before it is published
 - Protected accounts: never accepted for reporting
+- Remote files are inert data only; all scene and similarity logic is local
 - No IP logging, no user tracking
 - GitHub token stored as Cloudflare Secret, never in extension code
 - Periodic cleanup: old data purged automatically (1min–30day windows per table)
