@@ -233,6 +233,63 @@
     }) || '';
   }
 
+  function normalizeSampleText(value) {
+    return String(value || '')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/https?:\/\/\S+|www\.\S+/gi, ' url ')
+      .replace(/@[a-z0-9_]{1,20}/gi, ' user ')
+      .replace(/\d+/g, ' 0 ')
+      .replace(/[^\p{L}\p{N}\p{Extended_Pictographic}]+/gu, '')
+      .slice(0, 400);
+  }
+
+  function ngrams(value, size = 3) {
+    const chars = [...value];
+    if (chars.length < size) return chars.length ? [chars.join('')] : [];
+    const grams = [];
+    for (let index = 0; index <= chars.length - size; index += 1) {
+      grams.push(chars.slice(index, index + size).join(''));
+    }
+    return grams;
+  }
+
+  function diceSimilarity(left, right) {
+    const a = normalizeSampleText(left);
+    const b = normalizeSampleText(right);
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    if ([...a].length < 4 || [...b].length < 4) return 0;
+    const leftCounts = new Map();
+    for (const gram of ngrams(a)) leftCounts.set(gram, (leftCounts.get(gram) || 0) + 1);
+    let overlap = 0;
+    const rightGrams = ngrams(b);
+    for (const gram of rightGrams) {
+      const count = leftCounts.get(gram) || 0;
+      if (!count) continue;
+      overlap += 1;
+      leftCounts.set(gram, count - 1);
+    }
+    return (2 * overlap) / (ngrams(a).length + rightGrams.length);
+  }
+
+  function findRemoteSampleMatch(samples, tweetText, displayName) {
+    if (!Array.isArray(samples) || !samples.length) return null;
+    let best = null;
+    for (const sample of samples.slice(0, 2000)) {
+      if (!sample || typeof sample.text !== 'string') continue;
+      const textSimilarity = diceSimilarity(tweetText, sample.text);
+      const nameSimilarity = sample.displayName
+        ? diceSimilarity(displayName, sample.displayName)
+        : 0;
+      const combined = textSimilarity + (nameSimilarity * 0.18);
+      if (!best || combined > best.combined) {
+        best = { sample, textSimilarity, nameSimilarity, combined };
+      }
+    }
+    return best;
+  }
+
   function isLowInformationReplyText(text) {
     const normalized = normalizeSpace(text);
     const compact = normalized.replace(/\s+/g, '');
@@ -292,8 +349,10 @@
     const hasMentionedHandle = RX.mentionedHandle.test(tweetText);
     const saoDescriptorCount = countMatches(tweetText, RX.saoToken);
     const cnMentionAdultLure = hasAny(RX.cnMentionAdultLure, tweetText);
-    const remoteBlockedAccount = listHasHandle(config.blockedAccounts, handle);
     const remoteBlockedKeyword = findRemoteKeyword(config.remoteKeywords, combined);
+    const remoteSampleMatch = isReply
+      ? findRemoteSampleMatch(config.remoteLureSamples, tweetText, displayName)
+      : null;
 
     const strongDisplayName = hasAny([
       /同\s*城\s*上\s*门/,
@@ -308,7 +367,6 @@
     const emojiOnlyBody = !RX.wordLike.test(tweetText) && (countMatches(tweetText, RX.anyEmoji) >= 1 || [...tweetText.replace(/\s+/g, '')].length <= 2);
 
     if (hasAdultWarning) add(100, 'X adult/sensitive content warning', 'adult_solicitation');
-    if (remoteBlockedAccount) add(100, 'remote blocked account', 'remote_blocklist');
     if (remoteBlockedKeyword) add(75, `remote blocked keyword: ${remoteBlockedKeyword}`, 'remote_blocklist');
     if (cnDirect) add(50, 'explicit Chinese adult term', 'cn_adult_solicitation');
     if (cnDirectInDisplay) add(40, 'explicit adult term in display name', 'cn_adult_solicitation');
@@ -351,6 +409,25 @@
     if (nearEmojiTemplate && isReply) add(20, 'emoji-template reply', 'adult_solicitation');
     if (emojiCount >= 6 && emojiCount / textLength > 0.4) add(10, 'high emoji density', 'adult_solicitation');
 
+    // Remote samples are inert text data. The matching algorithm and all
+    // context gates remain fixed in this packaged file. A sample can only
+    // affect replies, and it needs either two-channel similarity (text +
+    // display name) or an independent local lure signal.
+    if (remoteSampleMatch) {
+      const textSimilarity = remoteSampleMatch.textSimilarity;
+      const nameSimilarity = remoteSampleMatch.nameSimilarity;
+      const hasLocalLureSignal = cnDirect || cnDisplay || cnContact || cnBioLure ||
+        enDirect || enBioLure || enContact || hasShortLink || nsfwEmojiCount >= 1 ||
+        hasMentionedHandle;
+      if (textSimilarity >= 0.90 && nameSimilarity >= 0.78) {
+        add(65, `confirmed lure-template match: ${Math.round(textSimilarity * 100)}%`, 'remote_sample');
+      } else if (textSimilarity >= 0.84 && hasLocalLureSignal) {
+        add(35, `lure-template similarity: ${Math.round(textSimilarity * 100)}%`, 'remote_sample');
+      } else if (textSimilarity >= 0.72 && nameSimilarity >= 0.94 && hasLocalLureSignal) {
+        add(30, `lure name/text pattern match: ${Math.round(textSimilarity * 100)}%`, 'remote_sample');
+      }
+    }
+
     const category = pickCategory(categoryScores);
     return buildResult({ handle, score, category, reasons, protected: false, settings: config });
   }
@@ -387,6 +464,8 @@
 
   globalThis.XybDetector = {
     evaluateTweet,
-    normalizeHandle
+    normalizeHandle,
+    normalizeSampleText,
+    diceSimilarity
   };
 })();

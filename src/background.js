@@ -1,10 +1,9 @@
 /* global importScripts */
-importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
+importScripts('defaults.js', 'remote-lists.js');
 
 (function () {
   'use strict';
 
-  const { WORKER_URL } = globalThis.XybDefaults;
   const {
     REMOTE_LISTS_STORAGE_KEY,
     REMOTE_LIST_URLS,
@@ -34,50 +33,8 @@ importScripts('defaults.js', 'remote-lists.js', 'community-sharing.js');
       return true;
     }
 
-    if (message.type === 'XYB_AUTO_REPORT') {
-      autoReportToWorker(message).then(sendResponse).catch(error =>
-        sendResponse({ ok: false, error: String(error && error.message || error) })
-      );
-      return true;
-    }
-
-    if (message.type === 'XYB_FETCH_AVATAR') {
-      fetchAvatarAsDataUrl(message.url)
-        .then(dataUrl => sendResponse({ ok: true, dataUrl }))
-        .catch(error => sendResponse({ ok: false, error: String(error && error.message || error) }));
-      return true;
-    }
-
     return false;
   });
-
-  async function autoReportToWorker(message) {
-    const { handles, clientId, verifications } = message;
-    if (!WORKER_URL) throw new Error('Worker URL not configured');
-
-    const resp = await fetch(`${WORKER_URL}/api/report`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handles, clientId, verifications })
-    });
-
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-    return data;
-  }
-
-  async function fetchAvatarAsDataUrl(url) {
-    if (!url) throw new Error('no url');
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const blob = await resp.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error('read failed'));
-      reader.readAsDataURL(blob);
-    });
-  }
 
   function refreshRemoteBlocklists() {
     if (refreshPromise) return refreshPromise;

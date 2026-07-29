@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'settings';
-  const { mergeSettings, WORKER_URL } = globalThis.XybDefaults;
+  const { mergeSettings } = globalThis.XybDefaults;
   const { normalizeHandle } = globalThis.XybDetector;
   const {
     MUTE_SYNC_STORAGE_KEY,
@@ -10,18 +10,9 @@
     createMuteSyncState
   } = globalThis.XybMuteWords;
   const { REMOTE_LISTS_STORAGE_KEY } = globalThis.XybRemoteLists;
-  const {
-    COMMUNITY_REPORTS_STORAGE_KEY,
-    AUTO_REPORTED_STORAGE_KEY,
-    normalizeState: normalizeCommunityState,
-    getCommunityReportBatch,
-    buildCommunityIssueUrl,
-    markCommunityReportsSubmitted,
-    loadAutoReportedCache,
-    getOrCreateClientId
-  } = globalThis.XybCommunitySharing;
 
   const REMOTE_STATUS_KEY = 'remoteBlocklistsStatus';
+  const DIAGNOSTIC_LOG_KEY = 'xybDiagnosticLog';
 
   const els = {
     enabled: document.getElementById('enabled'),
@@ -44,35 +35,33 @@
     cancelMuteWords: document.getElementById('cancelMuteWords'),
     remoteListStatus: document.getElementById('remoteListStatus'),
     refreshRemoteLists: document.getElementById('refreshRemoteLists'),
-    communitySharingEnabled: document.getElementById('communitySharingEnabled'),
-    communityNote: document.getElementById('communityNote'),
-    communityStatus: document.getElementById('communityStatus'),
-    submitCommunityReports: document.getElementById('submitCommunityReports'),
     blockedCount: document.getElementById('blockedCount'),
-    blockedList: document.getElementById('blockedList')
+    blockedList: document.getElementById('blockedList'),
+    diagnosticCount: document.getElementById('diagnosticCount'),
+    diagnosticLog: document.getElementById('diagnosticLog'),
+    copyDiagnosticLog: document.getElementById('copyDiagnosticLog'),
+    clearDiagnosticLog: document.getElementById('clearDiagnosticLog')
   };
 
   let settings = mergeSettings({});
   let muteSyncState = null;
-  let remoteBlocklists = { keywords: [], accounts: [], fetchedAt: 0 };
+  let remoteBlocklists = { keywords: [], lureSamples: [], fetchedAt: 0 };
   let remoteStatus = null;
-  let communityReports = normalizeCommunityState(null);
-  let autoReportedCache = [];
   let blockedInfo = {};
+  let diagnosticLogs = [];
   let saveTimer = null;
 
   boot();
 
   async function boot() {
-    [settings, muteSyncState, remoteBlocklists, remoteStatus, communityReports, autoReportedCache, blockedInfo] = await Promise.all([
+    [settings, muteSyncState, remoteBlocklists, remoteStatus, blockedInfo] = await Promise.all([
       loadSettings(),
       loadMuteSyncState(),
       loadRemoteBlocklists(),
       loadRemoteStatus(),
-      loadCommunityReports(),
-      loadAutoReportedCache(sg),
       loadBlockedInfo()
     ]);
+    diagnosticLogs = await loadDiagnosticLogs();
     render();
     bindEvents();
     watchMuteSync();
@@ -86,7 +75,7 @@
   }
 
   function bindEvents() {
-    ['enabled', 'hideDetected', 'autoBlock', 'communitySharingEnabled'].forEach(id => {
+    ['enabled', 'hideDetected', 'autoBlock'].forEach(id => {
       els[id].addEventListener('change', () => updateFromForm());
     });
     ['hideThreshold', 'autoBlockThreshold', 'blockDelayMs', 'maxBlocksPerSession'].forEach(id => {
@@ -102,14 +91,14 @@
     els.syncMuteWords.addEventListener('click', startMuteSync);
     els.cancelMuteWords.addEventListener('click', cancelMuteSync);
     els.refreshRemoteLists.addEventListener('click', refreshRemoteLists);
-    els.submitCommunityReports.addEventListener('click', submitCommunityReports);
+    els.copyDiagnosticLog.addEventListener('click', copyDiagnosticLogs);
+    els.clearDiagnosticLog.addEventListener('click', clearDiagnosticLogs);
   }
 
   function render() {
     els.enabled.checked = !!settings.enabled;
     els.hideDetected.checked = !!settings.hideDetected;
     els.autoBlock.checked = !!settings.autoBlock;
-    els.communitySharingEnabled.checked = !!settings.communitySharingEnabled;
     els.hideThreshold.value = settings.hideThreshold;
     els.autoBlockThreshold.value = settings.autoBlockThreshold;
     els.blockDelayMs.value = settings.blockDelayMs;
@@ -123,8 +112,8 @@
     els.failed.textContent = stats.failed || 0;
     renderMuteSync();
     renderRemoteLists();
-    renderCommunityReports();
     renderBlockedList();
+    renderDiagnosticLogs();
   }
 
   async function loadMuteSyncState() {
@@ -140,20 +129,12 @@
         renderMuteSync();
       }
       if (changes[REMOTE_LISTS_STORAGE_KEY]) {
-        remoteBlocklists = changes[REMOTE_LISTS_STORAGE_KEY].newValue || { keywords: [], accounts: [], fetchedAt: 0 };
+        remoteBlocklists = changes[REMOTE_LISTS_STORAGE_KEY].newValue || { keywords: [], lureSamples: [], fetchedAt: 0 };
         renderRemoteLists();
       }
       if (changes[REMOTE_STATUS_KEY]) {
         remoteStatus = changes[REMOTE_STATUS_KEY].newValue || null;
         renderRemoteLists();
-      }
-      if (changes[COMMUNITY_REPORTS_STORAGE_KEY]) {
-        communityReports = normalizeCommunityState(changes[COMMUNITY_REPORTS_STORAGE_KEY].newValue);
-        renderCommunityReports();
-      }
-      if (changes[AUTO_REPORTED_STORAGE_KEY]) {
-        autoReportedCache = loadAutoReportedCacheSync(changes[AUTO_REPORTED_STORAGE_KEY].newValue);
-        renderCommunityReports();
       }
       if (changes[STORAGE_KEY]) {
         settings = mergeSettings(changes[STORAGE_KEY].newValue);
@@ -163,70 +144,28 @@
         blockedInfo = changes['xybBlockedInfo'].newValue || {};
         renderBlockedList();
       }
+      if (changes[DIAGNOSTIC_LOG_KEY]) {
+        diagnosticLogs = Array.isArray(changes[DIAGNOSTIC_LOG_KEY].newValue)
+          ? changes[DIAGNOSTIC_LOG_KEY].newValue
+          : [];
+        renderDiagnosticLogs();
+      }
     });
   }
 
-  async function loadCommunityReports() {
-    const data = await chrome.storage.local.get(COMMUNITY_REPORTS_STORAGE_KEY);
-    return normalizeCommunityState(data && data[COMMUNITY_REPORTS_STORAGE_KEY]);
-  }
-
-  function renderCommunityReports() {
-    const autoReported = autoReportedCache.length;
-    const workerReady = !!WORKER_URL;
-
-    if (!settings.communitySharingEnabled) {
-      els.communityStatus.textContent = '未开启';
-      els.submitCommunityReports.hidden = true;
-    } else if (workerReady) {
-      els.communityStatus.textContent = autoReported > 0
-        ? `匿名自动上报中 · 本次 ${autoReported} 个`
-        : '匿名自动上报已就绪';
-      els.submitCommunityReports.hidden = true;
-    } else {
-      els.communityStatus.textContent = 'Worker 未配置 · 使用手动提交';
-      els.submitCommunityReports.hidden = false;
-      els.submitCommunityReports.disabled = communityReports.pending.length === 0;
-      els.communityStatus.textContent = `待贡献 ${communityReports.pending.length} 个`;
-    }
-  }
-
-  function loadAutoReportedCacheSync(value) {
-    const handles = Array.isArray(value) ? value : (value && value[AUTO_REPORTED_STORAGE_KEY]);
-    return Array.isArray(handles)
-      ? handles.map(h => String(h).trim().toLowerCase()).filter(h => h && h.startsWith('@'))
-      : [];
-  }
-
-  async function submitCommunityReports() {
-    const batch = getCommunityReportBatch(communityReports);
-    if (!settings.communitySharingEnabled || !batch.length) return;
-    els.submitCommunityReports.disabled = true;
-    try {
-      await navigator.clipboard.writeText(batch.join('\n'));
-      const version = chrome.runtime.getManifest().version;
-      await chrome.tabs.create({ url: buildCommunityIssueUrl(version), active: true });
-      communityReports = markCommunityReportsSubmitted(communityReports, batch);
-      await chrome.storage.local.set({ [COMMUNITY_REPORTS_STORAGE_KEY]: communityReports });
-      window.close();
-    } catch {
-      els.communityStatus.textContent = '复制失败，名单仍保留';
-      els.submitCommunityReports.disabled = false;
-    }
-  }
-
   async function startMuteSync() {
-    const words = [...DEFAULT_MUTE_WORDS, ...(remoteBlocklists.keywords || [])];
-    muteSyncState = createMuteSyncState(words);
+    // The content script first scans the active X account, then refreshes
+    // cloud keywords and builds a missing-only queue.
+    muteSyncState = createMuteSyncState([]);
     await chrome.storage.local.set({ [MUTE_SYNC_STORAGE_KEY]: muteSyncState });
     renderMuteSync();
-    await chrome.tabs.create({ url: 'https://x.com/settings/add_muted_keyword', active: true });
+    await chrome.tabs.create({ url: 'https://x.com/settings/muted_keywords', active: true });
     window.close();
   }
 
   async function loadRemoteBlocklists() {
     const data = await chrome.storage.local.get(REMOTE_LISTS_STORAGE_KEY);
-    return data && data[REMOTE_LISTS_STORAGE_KEY] || { keywords: [], accounts: [], fetchedAt: 0 };
+    return data && data[REMOTE_LISTS_STORAGE_KEY] || { keywords: [], lureSamples: [], fetchedAt: 0 };
   }
 
   async function loadRemoteStatus() {
@@ -257,20 +196,14 @@
 
   function renderRemoteLists() {
     const keywordCount = Array.isArray(remoteBlocklists.keywords) ? remoteBlocklists.keywords.length : 0;
-    const accountCount = Array.isArray(remoteBlocklists.accounts) ? remoteBlocklists.accounts.length : 0;
+    const sampleCount = Array.isArray(remoteBlocklists.lureSamples) ? remoteBlocklists.lureSamples.length : 0;
     if (remoteStatus && remoteStatus.ok) {
-      els.remoteListStatus.textContent = `远程：${keywordCount} 词 · ${accountCount} 账号`;
+      els.remoteListStatus.textContent = `GitHub：${keywordCount} 词 · ${sampleCount} 语言样本`;
     } else if (remoteStatus && remoteStatus.error) {
-      els.remoteListStatus.textContent = `远程更新失败，使用缓存 ${keywordCount}/${accountCount}`;
+      els.remoteListStatus.textContent = `更新失败，使用缓存：${keywordCount} 词 · ${sampleCount} 样本`;
     } else {
-      els.remoteListStatus.textContent = `远程缓存：${keywordCount} 词 · ${accountCount} 账号`;
+      els.remoteListStatus.textContent = `缓存：${keywordCount} 词 · ${sampleCount} 语言样本`;
     }
-  }
-
-  function placeholder() {
-    const span = document.createElement('span');
-    span.className = 'blocked-avatar-placeholder';
-    return span;
   }
 
   function renderBlockedList() {
@@ -300,17 +233,12 @@
         img.src = info.avatarUrl;
         img.alt = '';
         img.loading = 'lazy';
-        img.referrerPolicy = 'no-referrer';
-        // Show first letter of name/handle while loading
-        const letter = (info.displayName || handle).charAt(0).toUpperCase();
-        img.setAttribute('data-fallback', letter);
-        let replaced = false;
-        img.onerror = () => { if (!replaced) { replaced = true; img.replaceWith(placeholder()); } };
-        // Timeout fallback: if image doesn't load in 4s, swap to placeholder
-        setTimeout(() => { if (!replaced && !img.complete) { replaced = true; img.replaceWith(placeholder()); } }, 4000);
+        img.onerror = () => { img.style.display = 'none'; };
         item.appendChild(img);
       } else {
-        item.appendChild(placeholder());
+        const placeholder = document.createElement('span');
+        placeholder.className = 'blocked-avatar-placeholder';
+        item.appendChild(placeholder);
       }
 
       // Name + handle
@@ -340,6 +268,35 @@
       item.appendChild(btn);
       els.blockedList.appendChild(item);
     }
+  }
+
+  async function loadDiagnosticLogs() {
+    const data = await chrome.storage.local.get(DIAGNOSTIC_LOG_KEY);
+    return Array.isArray(data && data[DIAGNOSTIC_LOG_KEY]) ? data[DIAGNOSTIC_LOG_KEY] : [];
+  }
+
+  function formatDiagnosticLogs() {
+    return diagnosticLogs.slice(-100).map(entry => {
+      const time = String(entry.timestamp || '').replace('T', ' ').replace('Z', '');
+      return `${time} ${entry.event || 'unknown'} ${JSON.stringify(entry.details || {})}`;
+    }).join('\n');
+  }
+
+  function renderDiagnosticLogs() {
+    els.diagnosticCount.textContent = `${diagnosticLogs.length} 条`;
+    els.diagnosticLog.textContent = diagnosticLogs.length ? formatDiagnosticLogs() : '暂无日志';
+    els.copyDiagnosticLog.disabled = diagnosticLogs.length === 0;
+    els.clearDiagnosticLog.disabled = diagnosticLogs.length === 0;
+  }
+
+  async function copyDiagnosticLogs() {
+    await navigator.clipboard.writeText(formatDiagnosticLogs());
+    els.copyDiagnosticLog.textContent = '已复制';
+    setTimeout(() => { els.copyDiagnosticLog.textContent = '复制日志'; }, 1200);
+  }
+
+  async function clearDiagnosticLogs() {
+    await chrome.storage.local.set({ [DIAGNOSTIC_LOG_KEY]: [] });
   }
 
   async function removeAndWhitelist(handle, btn, item) {
@@ -393,10 +350,12 @@
 
     if (!state) {
       els.muteSyncProgress.textContent = `${total} 个词`;
+    } else if (state.active && state.phase === 'scan') {
+      els.muteSyncProgress.textContent = '正在读取已有屏蔽词…';
     } else if (state.active) {
-      els.muteSyncProgress.textContent = `${index}/${total} · 新增 ${state.added || 0} · 跳过 ${state.skipped || 0}`;
+      els.muteSyncProgress.textContent = `${index}/${total} · 新增 ${state.added || 0} · 已有 ${state.existing || 0}`;
     } else if (state.phase === 'complete') {
-      els.muteSyncProgress.textContent = `完成 · 新增 ${state.added || 0} · 跳过 ${state.skipped || 0}`;
+      els.muteSyncProgress.textContent = `完成 · 新增 ${state.added || 0} · 已有 ${state.existing || 0} · 失败 ${(state.failures || []).length}`;
     } else if (state.phase === 'cancelled') {
       els.muteSyncProgress.textContent = `已停止 ${index}/${total}`;
     } else {
@@ -414,14 +373,12 @@
       enabled: els.enabled.checked,
       hideDetected: els.hideDetected.checked,
       autoBlock: els.autoBlock.checked,
-      communitySharingEnabled: els.communitySharingEnabled.checked,
       hideThreshold: readNumber(els.hideThreshold, 65),
       autoBlockThreshold: readNumber(els.autoBlockThreshold, 65),
       blockDelayMs: readNumber(els.blockDelayMs, 2500),
       maxBlocksPerSession: readNumber(els.maxBlocksPerSession, 30),
       whitelist: parseHandles(els.whitelist.value)
     });
-    renderCommunityReports();
     scheduleSave();
   }
 
@@ -457,6 +414,4 @@
     setTimeout(() => { els.status.textContent = '已加载'; }, 900);
   }
 
-  function sg(key) { return chrome.storage.local.get(key); }
-  function ss(items) { return chrome.storage.local.set(items); }
 })();

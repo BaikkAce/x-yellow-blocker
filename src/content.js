@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  if (!globalThis.XybDetector || !globalThis.XybDefaults || !globalThis.XybXUiText || !globalThis.XybMuteWords || !globalThis.XybRemoteLists || !globalThis.XybCommunitySharing) {
+  if (!globalThis.XybDetector || !globalThis.XybDefaults || !globalThis.XybXUiText || !globalThis.XybMuteWords || !globalThis.XybRemoteLists) {
     console.warn('[XYB] Missing detector/defaults bootstrap');
     return;
   }
@@ -11,27 +11,21 @@
   const { compactText, isBlockMenuText, isConfirmBlockText } = globalThis.XybXUiText;
   const {
     MUTE_SYNC_STORAGE_KEY,
+    DEFAULT_MUTE_WORDS,
+    normalizeMuteWords,
     createMuteSyncState,
     advanceMuteSyncState
   } = globalThis.XybMuteWords;
   const { REMOTE_LISTS_STORAGE_KEY } = globalThis.XybRemoteLists;
-  const { WORKER_URL } = globalThis.XybDefaults;
-  const {
-    COMMUNITY_REPORTS_STORAGE_KEY,
-    enqueueCommunityReport,
-    getOrCreateClientId,
-    buildVerificationPayload,
-    loadAutoReportedCache,
-    saveAutoReportedCache,
-    wasAlreadyAutoReported
-  } = globalThis.XybCommunitySharing;
 
   const STORAGE_KEY = 'settings';
-  const REMOTE_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // auto-refresh shared lists every 1 hour
+  const DIAGNOSTIC_LOG_KEY = 'xybDiagnosticLog';
+  const MAX_DIAGNOSTIC_ENTRIES = 200;
+  const REMOTE_REFRESH_INTERVAL_MS = 60 * 60 * 1000; // refresh keywords and language samples every hour
   const ARTICLE_SELECTOR = 'article[data-testid="tweet"], article[role="article"]';
   const RESERVED_PATHS = /^(home|explore|notifications|messages|i|settings|search|compose|bookmarks|following|followers|jobs)$/i;
   let settings = mergeSettings({});
-  let remoteBlocklists = { keywords: [], accounts: [], fetchedAt: 0 };
+  let remoteBlocklists = { keywords: [], lureSamples: [], fetchedAt: 0 };
   let observer = null;
   let processingQueue = false;
   let sessionBlockCount = 0;
@@ -41,6 +35,7 @@
   const pendingStats = { detected: 0, queued: 0, blocked: 0, failed: 0 };
   let statsTimer = null;
   let muteSyncBusy = false;
+  let diagnosticWritePromise = Promise.resolve();
 
   boot();
 
@@ -55,6 +50,13 @@
     resumeMuteWordSync();
     refreshRemoteBlocklistsIfStale();
     setInterval(refreshRemoteBlocklistsIfStale, REMOTE_REFRESH_INTERVAL_MS);
+    logDiagnostic('boot', {
+      autoBlock: settings.autoBlock,
+      threshold: settings.autoBlockThreshold,
+      delayMs: settings.blockDelayMs,
+      sessionLimit: settings.maxBlocksPerSession,
+      path: location.pathname
+    });
     console.info('[XYB] loaded', { autoBlock: settings.autoBlock, hideThreshold: settings.hideThreshold });
   }
 
@@ -76,12 +78,12 @@
       const stored = data && data[REMOTE_LISTS_STORAGE_KEY];
       return {
         keywords: Array.isArray(stored && stored.keywords) ? stored.keywords : [],
-        accounts: Array.isArray(stored && stored.accounts) ? stored.accounts : [],
+        lureSamples: Array.isArray(stored && stored.lureSamples) ? stored.lureSamples : [],
         fetchedAt: Number(stored && stored.fetchedAt || 0)
       };
     } catch (error) {
       console.warn('[XYB] failed to load remote blocklists', error);
-      return { keywords: [], accounts: [], fetchedAt: 0 };
+      return { keywords: [], lureSamples: [], fetchedAt: 0 };
     }
   }
 
@@ -91,7 +93,7 @@
       const next = changes[REMOTE_LISTS_STORAGE_KEY].newValue || {};
       remoteBlocklists = {
         keywords: Array.isArray(next.keywords) ? next.keywords : [],
-        accounts: Array.isArray(next.accounts) ? next.accounts : [],
+        lureSamples: Array.isArray(next.lureSamples) ? next.lureSamples : [],
         fetchedAt: Number(next.fetchedAt || 0)
       };
       reEvaluateAll();
@@ -142,7 +144,7 @@
     if (!state.words.length) throw new Error('屏蔽词列表为空');
     await saveMuteSyncState(state);
     renderMuteSyncToast(state);
-    setTimeout(() => location.assign('/settings/add_muted_keyword'), 120);
+    setTimeout(() => location.assign('/settings/muted_keywords'), 50);
     return state;
   }
 
@@ -170,6 +172,15 @@
     }
 
     renderMuteSyncToast(state);
+    if (state.phase === 'scan') {
+      if (!location.pathname.includes('/settings/muted_keywords')) {
+        location.assign('/settings/muted_keywords');
+        return;
+      }
+      setTimeout(() => scanExistingMuteWords(state), 180);
+      return;
+    }
+
     if (Number(state.index || 0) >= state.words.length) {
       await finishMuteWordSync(state);
       return;
@@ -179,7 +190,16 @@
       const next = advanceMuteSyncState(state, { outcome: 'added' });
       await saveMuteSyncState(next);
       renderMuteSyncToast(next);
-      if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 300);
+      if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 100);
+      return;
+    }
+
+    const deduped = advancePastExistingMuteWords(state);
+    if (deduped.index !== state.index) {
+      await saveMuteSyncState(deduped);
+      renderMuteSyncToast(deduped);
+      if (!deduped.active) return;
+      setTimeout(() => location.assign('/settings/add_muted_keyword'), 100);
       return;
     }
 
@@ -192,11 +212,141 @@
       const next = advanceMuteSyncState(state, { outcome: 'skipped', reason: '页面重载后未确认保存' });
       await saveMuteSyncState(next);
       renderMuteSyncToast(next);
-      if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 300);
+      if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 100);
       return;
     }
 
-    setTimeout(() => submitCurrentMuteWord(state), 500);
+    setTimeout(() => submitCurrentMuteWord(state), 180);
+  }
+
+  async function scanExistingMuteWords(initialState) {
+    if (muteSyncBusy) return;
+    muteSyncBusy = true;
+    try {
+      const latest = await loadMuteSyncState();
+      const state = latest && latest.active ? latest : initialState;
+      if (!state || !state.active || state.phase !== 'scan') return;
+
+      const found = new Set();
+      let stableRounds = 0;
+      let previousSize = -1;
+      const scroller = findMuteWordsScroller();
+      for (let round = 0; round < 50 && stableRounds < 3; round += 1) {
+        collectVisibleMuteWords().forEach(word => found.add(word));
+        const before = readScrollTop(scroller);
+        scrollMuteWords(scroller, Math.max(500, window.innerHeight * 0.8));
+        await sleep(90);
+        const after = readScrollTop(scroller);
+        if (found.size === previousSize && after === before) stableRounds += 1;
+        else stableRounds = 0;
+        previousSize = found.size;
+      }
+      writeScrollTop(scroller, 0);
+
+      let cloudKeywords = remoteBlocklists.keywords || [];
+      try {
+        const refreshed = await chrome.runtime.sendMessage({ type: 'XYB_REFRESH_REMOTE_LISTS' });
+        if (refreshed && refreshed.ok && refreshed.lists && Array.isArray(refreshed.lists.keywords)) {
+          cloudKeywords = refreshed.lists.keywords;
+        }
+      } catch (error) {
+        console.warn('[XYB] cloud keywords refresh failed; using cache', error);
+      }
+
+      const allCandidates = normalizeMuteWords([...DEFAULT_MUTE_WORDS, ...cloudKeywords]);
+      const existingKeys = new Set(normalizeMuteWords([...found]).map(word => word.toLocaleLowerCase()));
+      const missingWords = allCandidates.filter(word => !existingKeys.has(word.toLocaleLowerCase()));
+      const scanned = {
+        ...state,
+        words: missingWords,
+        index: 0,
+        added: 0,
+        skipped: allCandidates.length - missingWords.length,
+        existing: allCandidates.length - missingWords.length,
+        failures: [],
+        existingWords: normalizeMuteWords([...found]),
+        candidateCount: allCandidates.length,
+        phase: 'navigate',
+        updatedAt: Date.now()
+      };
+      if (!missingWords.length) {
+        scanned.active = false;
+        scanned.phase = 'complete';
+        scanned.finishedAt = Date.now();
+      }
+      await saveMuteSyncState(scanned);
+      renderMuteSyncToast(scanned);
+      if (scanned.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 100);
+    } finally {
+      muteSyncBusy = false;
+    }
+  }
+
+  function collectVisibleMuteWords() {
+    const candidates = [];
+    document.querySelectorAll('a[href*="/settings/muted_keywords/"]').forEach(link => {
+      const line = firstMeaningfulLine(link.textContent);
+      if (line) candidates.push(line);
+    });
+    if (!candidates.length) {
+      document.querySelectorAll('[data-testid="cellInnerDiv"]').forEach(cell => {
+        const text = compactText(cell.textContent);
+        const looksLikeMuteEntry = /(主页时间线|通知|直到你取消|24\s*小时|7\s*天|30\s*天|home timeline|notifications|until you unmute|forever)/i.test(text);
+        if (!looksLikeMuteEntry && !cell.querySelector('[data-testid="caret"], button[aria-haspopup="menu"]')) return;
+        const line = extractMuteWordFromCell(cell);
+        if (line) candidates.push(line);
+      });
+    }
+    return normalizeMuteWords(candidates);
+  }
+
+  function firstMeaningfulLine(value) {
+    const ignored = /^(muted|屏蔽|已屏蔽|来自|通知|home timeline|notifications|until|永久|forever|more|更多)$/i;
+    return String(value || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .find(line => line && line.length <= 100 && !ignored.test(line)) || '';
+  }
+
+  function extractMuteWordFromCell(cell) {
+    const ignored = /^(主页时间线|通知|来自任何人|来自你未关注的人|直到你取消隐藏该词语|24\s*小时|7\s*天|30\s*天|home timeline|notifications|from anyone|from people you don't follow|until you unmute the word|24 hours|7 days|30 days|forever|更多|more)$/i;
+    const spanTexts = Array.from(cell.querySelectorAll('span'))
+      .map(span => compactText(span.textContent))
+      .filter(text => text && text.length <= 100 && !ignored.test(text));
+    return spanTexts[0] || firstMeaningfulLine(cell.textContent);
+  }
+
+  function findMuteWordsScroller() {
+    const main = document.querySelector('main') || document.body;
+    const candidates = [document.scrollingElement, ...main.querySelectorAll('div')]
+      .filter(Boolean)
+      .filter(element => element.scrollHeight > element.clientHeight + 80)
+      .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight));
+    return candidates[0] || document.scrollingElement;
+  }
+
+  function readScrollTop(scroller) {
+    return scroller === document.scrollingElement ? window.scrollY : Number(scroller.scrollTop || 0);
+  }
+
+  function writeScrollTop(scroller, value) {
+    if (scroller === document.scrollingElement) window.scrollTo(0, value);
+    else scroller.scrollTop = value;
+  }
+
+  function scrollMuteWords(scroller, amount) {
+    writeScrollTop(scroller, readScrollTop(scroller) + amount);
+  }
+
+  function advancePastExistingMuteWords(state) {
+    let next = state;
+    const existing = new Set(normalizeMuteWords(state.existingWords).map(word => word.toLocaleLowerCase()));
+    while (next.active && Number(next.index || 0) < next.words.length) {
+      const word = String(next.words[next.index] || '').trim();
+      if (!existing.has(word.toLocaleLowerCase())) break;
+      next = advanceMuteSyncState(next, { outcome: 'existing', reason: '已存在' });
+    }
+    return next;
   }
 
   async function submitCurrentMuteWord(initialState) {
@@ -221,7 +371,12 @@
       }
 
       setInputValue(input, word);
-      const saveButton = await waitFor(findMuteWordSaveButton, 2500);
+      const alreadyExists = await waitFor(() => muteWordAlreadyExists(word), 400);
+      if (alreadyExists) {
+        await skipExistingMuteWord(state);
+        return;
+      }
+      const saveButton = await waitFor(findMuteWordSaveButton, 1200);
       if (!saveButton) {
         await skipMuteWord(state, '找不到 X 保存按钮');
         return;
@@ -237,7 +392,7 @@
       renderMuteSyncToast(submitted);
       saveButton.click();
 
-      const saved = await waitFor(() => location.pathname.includes('/settings/muted_keywords'), 5000);
+      const saved = await waitFor(() => location.pathname.includes('/settings/muted_keywords'), 3500);
       if (!saved) {
         await skipMuteWord(submitted, readMuteWordFormError() || 'X 未确认保存，可能已存在');
         return;
@@ -246,7 +401,7 @@
       const next = advanceMuteSyncState(submitted, { outcome: 'added' });
       await saveMuteSyncState(next);
       renderMuteSyncToast(next);
-      if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 350);
+      if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 100);
     } finally {
       muteSyncBusy = false;
     }
@@ -287,7 +442,7 @@
     const next = advanceMuteSyncState(state, { outcome: 'skipped', reason });
     await saveMuteSyncState(next);
     renderMuteSyncToast(next);
-    if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 450);
+    if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 150);
   }
 
   async function finishMuteWordSync(state) {
@@ -326,7 +481,7 @@
     }
 
     if (state.phase === 'complete') {
-      toast.textContent = `屏蔽词同步完成：新增 ${state.added || 0}，跳过 ${state.skipped || 0}`;
+      toast.textContent = `屏蔽词同步完成：新增 ${state.added || 0}，已存在 ${state.existing || 0}，失败 ${(state.failures || []).length}`;
       setTimeout(() => toast && toast.remove(), 5000);
       return;
     }
@@ -338,7 +493,9 @@
 
     const total = Array.isArray(state.words) ? state.words.length : 0;
     const position = Math.min(Number(state.index || 0) + 1, total);
-    toast.textContent = `正在同步 X 屏蔽词 ${position}/${total}${state.currentWord ? `：${state.currentWord}` : ''}`;
+    toast.textContent = state.phase === 'scan'
+      ? '正在读取当前 X 账号已有屏蔽词…'
+      : `正在同步 X 屏蔽词 ${position}/${total}${state.currentWord ? `：${state.currentWord}` : ''}`;
   }
 
   function needsReEvaluation(previous, next) {
@@ -407,15 +564,29 @@
     const tweet = extractTweet(article);
     if (!tweet || !tweet.handle) return;
 
+    // Product boundary: only moderate replies under an opened post. Never
+    // hide/block the root post, timeline posts, search results or profiles.
+    if (!tweet.isThreadReply) {
+      clearArticleState(article);
+      article.dataset.xyb = 'out-of-scope';
+      return;
+    }
+
     const verdict = evaluateTweet(tweet, {
       ...settings,
       remoteKeywords: remoteBlocklists.keywords,
-      blockedAccounts: remoteBlocklists.accounts
+      remoteLureSamples: remoteBlocklists.lureSamples
     });
     article.dataset.xybHandle = tweet.handle;
     article.dataset.xybScore = String(verdict.score);
 
     if (verdict.shouldHide) {
+      logDiagnostic('detected', {
+        handle: tweet.handle,
+        score: verdict.score,
+        shouldAutoBlock: verdict.shouldAutoBlock,
+        autoBlockEnabled: settings.autoBlock
+      });
       markDetected(article, tweet, verdict);
       countDetected(article);
       if (settings.autoBlock && verdict.shouldAutoBlock) {
@@ -440,8 +611,7 @@
     const displayName = cleanDisplayName(userNameText, handle);
     const avatarImg = article.querySelector('img[src*="profile_images"]') ||
       article.querySelector('img[src*="twimg.com/profile"]');
-    // Store raw URL — background SW will fetch & convert to data URL
-    const avatarUrl = avatarImg ? (avatarImg.currentSrc || avatarImg.src || '') : '';
+    const avatarUrl = avatarImg ? (avatarImg.src || '').replace('_normal', '_bigger') : '';
     const externalLinks = Array.from(article.querySelectorAll('a[href]'))
       .map(link => link.href || link.getAttribute('href') || '')
       .filter(isExternalLink);
@@ -454,8 +624,40 @@
       articleText: extractTextWithEmoji(article),
       externalLinks,
       isReply: isReplyArticle(article),
+      isThreadReply: isThreadReplyArticle(article),
       verified: !!article.querySelector('svg[data-testid="icon-verified"]')
     };
+  }
+
+  function muteWordAlreadyExists(word) {
+    const text = compactText((document.querySelector('main') || document.body).textContent);
+    const duplicateMessage = /(已经隐藏了|已经屏蔽了|已隐藏|已屏蔽|already muted|already hidden|already exists|すでにミュート|이미 뮤트)/i.test(text);
+    return duplicateMessage && text.toLocaleLowerCase().includes(String(word || '').trim().toLocaleLowerCase());
+  }
+
+  async function skipExistingMuteWord(state) {
+    const next = advanceMuteSyncState(state, { outcome: 'existing', reason: 'X 确认已存在' });
+    await saveMuteSyncState(next);
+    renderMuteSyncToast(next);
+    if (next.active) setTimeout(() => location.assign('/settings/add_muted_keyword'), 100);
+  }
+
+  function isThreadReplyArticle(article) {
+    const rootMatch = location.pathname.match(/\/status\/(\d+)/i);
+    if (!rootMatch) return false;
+    const articleStatusId = extractArticleStatusId(article);
+    return !!articleStatusId && articleStatusId !== rootMatch[1];
+  }
+
+  function extractArticleStatusId(article) {
+    // The timestamp link is the tweet's canonical permalink. Restricting the
+    // lookup to links containing <time> avoids mistaking quoted posts for the
+    // comment itself.
+    const time = article.querySelector('a[href*="/status/"] time');
+    const permalink = time && time.closest('a[href*="/status/"]');
+    const href = permalink && permalink.getAttribute('href') || '';
+    const match = href.match(/\/status\/(\d+)/i);
+    return match ? match[1] : '';
   }
 
   function extractHandle(root) {
@@ -542,7 +744,9 @@
     }
 
     banner.querySelector('.xyb-title').textContent = '疑似黄色引流';
-    banner.querySelector('.xyb-meta').textContent = `${tweet.handle} · ${verdict.score}`;
+    banner.querySelector('.xyb-meta').textContent = settings.autoBlock
+      ? `${tweet.handle} · ${verdict.score}`
+      : `${tweet.handle} · ${verdict.score} · 自动屏蔽已关闭`;
     banner.querySelector('.xyb-reasons').textContent = verdict.reasons.join(' · ');
     banner.querySelector('[data-xyb-action="block"]').disabled = !tweet.handle || isBlocked(tweet.handle);
   }
@@ -579,12 +783,34 @@
 
   function enqueueBlock(job) {
     const handle = normalizeHandle(job.tweet && job.tweet.handle);
-    if (!handle || queuedHandles.has(handle) || isBlocked(handle)) return;
-    if (listHas(settings.whitelist, handle) || listHas(settings.followedHandles, handle)) return;
-    if (!job.manual && sessionBlockCount >= Number(settings.maxBlocksPerSession || 30)) return;
+    if (!handle) {
+      logDiagnostic('queue_rejected', { reason: 'missing_handle' });
+      return;
+    }
+    if (queuedHandles.has(handle)) {
+      logDiagnostic('queue_duplicate', { handle });
+      markBlockState(job.article, 'queued');
+      return;
+    }
+    if (isBlocked(handle)) {
+      logDiagnostic('queue_rejected', { handle, reason: 'already_blocked_locally' });
+      markBlockState(job.article, 'done');
+      return;
+    }
+    if (listHas(settings.whitelist, handle) || listHas(settings.followedHandles, handle)) {
+      logDiagnostic('queue_rejected', { handle, reason: 'trusted_or_followed' });
+      markBlockState(job.article, 'failed', '账号在本机信任名单中');
+      return;
+    }
+    if (!job.manual && sessionBlockCount >= Number(settings.maxBlocksPerSession || 30)) {
+      logDiagnostic('queue_rejected', { handle, reason: 'session_limit', sessionBlockCount });
+      markBlockState(job.article, 'failed', '已达到本轮自动屏蔽上限');
+      return;
+    }
 
     queuedHandles.add(handle);
     blockQueue.push({ ...job, handle, enqueuedAt: Date.now() });
+    logDiagnostic('queued', { handle, manual: !!job.manual, queueLength: blockQueue.length });
     if (job.article) job.article.dataset.xybBlock = 'queued';
     updateStats({ queued: 1 });
     processBlockQueue();
@@ -596,20 +822,28 @@
     while (blockQueue.length) {
       const job = blockQueue.shift();
       queuedHandles.delete(job.handle);
-      if (!job.manual && !settings.autoBlock) continue;
-      if (!job.manual && sessionBlockCount >= Number(settings.maxBlocksPerSession || 30)) continue;
+      if (!job.manual && !settings.autoBlock) {
+        logDiagnostic('queue_skipped', { handle: job.handle, reason: 'auto_block_disabled' });
+        markBlockState(job.article, 'failed', '自动屏蔽已关闭');
+        continue;
+      }
+      if (!job.manual && sessionBlockCount >= Number(settings.maxBlocksPerSession || 30)) {
+        logDiagnostic('queue_skipped', { handle: job.handle, reason: 'session_limit', sessionBlockCount });
+        markBlockState(job.article, 'failed', '已达到本轮自动屏蔽上限');
+        continue;
+      }
       await sleep(Number(settings.blockDelayMs || 2500));
+      logDiagnostic('attempt_started', { handle: job.handle, articleConnected: !!(job.article && document.contains(job.article)) });
       const result = await attemptBlock(job);
       if (result.ok) {
         sessionBlockCount += 1;
         await rememberBlocked(job.handle, job.tweet);
-        autoReportBlocked(job.handle, job.verdict).catch(err =>
-          console.warn('[XYB] auto-report failed', err)
-        );
         markBlockState(job.article, 'done');
+        logDiagnostic('attempt_succeeded', { handle: job.handle });
         updateStats({ blocked: 1 });
       } else {
         markBlockState(job.article, 'failed', result.reason);
+        logDiagnostic('attempt_failed', { handle: job.handle, reason: result.reason });
         updateStats({ failed: 1 });
       }
     }
@@ -620,26 +854,102 @@
     const article = job.article;
     if (!article || !document.contains(article)) return { ok: false, reason: '推文已从页面移除' };
     markBlockState(article, 'working');
+    // X anchors the dropdown to the More button's layout box. A fully
+    // collapsed article has no usable anchor, so reveal it only while the
+    // native block UI is being operated.
+    const previousArticleState = article.dataset.xyb;
+    article.dataset.xyb = 'revealed';
 
     const moreButton = findMoreButton(article);
-    if (!moreButton) return { ok: false, reason: '找不到更多菜单' };
+    if (!moreButton) {
+      logDiagnostic('more_button_missing', {
+        handle: job.handle,
+        buttons: collectButtonDiagnostics(article)
+      });
+      article.dataset.xyb = previousArticleState;
+      return { ok: false, reason: '找不到更多菜单' };
+    }
+    logDiagnostic('more_button_found', {
+      handle: job.handle,
+      testId: moreButton.getAttribute('data-testid') || '',
+      ariaLabel: moreButton.getAttribute('aria-label') || ''
+    });
     moreButton.click();
 
     const menuItem = await waitFor(() => findBlockMenuItem(job.handle), 1800);
     if (!menuItem) {
+      logDiagnostic('block_menu_missing', {
+        handle: job.handle,
+        menuTexts: collectMenuDiagnostics()
+      });
       closeTransientUi();
+      article.dataset.xyb = previousArticleState;
       return { ok: false, reason: '找不到屏蔽菜单项' };
     }
+    logDiagnostic('block_menu_found', { handle: job.handle, text: compactText(menuItem.textContent).slice(0, 160) });
     menuItem.click();
 
     const confirmButton = await waitFor(findConfirmBlockButton, 2200);
     if (!confirmButton) {
+      logDiagnostic('confirm_button_missing', {
+        handle: job.handle,
+        dialogTexts: collectDialogDiagnostics()
+      });
       closeTransientUi();
+      article.dataset.xyb = previousArticleState;
       return { ok: false, reason: '找不到确认屏蔽按钮' };
     }
+    logDiagnostic('confirm_button_found', {
+      handle: job.handle,
+      text: compactText(confirmButton.textContent).slice(0, 80),
+      testId: confirmButton.getAttribute('data-testid') || ''
+    });
     confirmButton.click();
     await sleep(700);
+    if (document.contains(article)) article.dataset.xyb = previousArticleState;
     return { ok: true };
+  }
+
+  function collectButtonDiagnostics(article) {
+    return Array.from(article.querySelectorAll('button, div[role="button"]'))
+      .slice(0, 25)
+      .map(button => ({
+        testId: button.getAttribute('data-testid') || '',
+        ariaLabel: button.getAttribute('aria-label') || '',
+        text: compactText(button.textContent).slice(0, 60)
+      }));
+  }
+
+  function collectMenuDiagnostics() {
+    return Array.from(document.querySelectorAll('[role="menuitem"], [role="menu"] [role="button"], [data-testid="Dropdown"] button'))
+      .slice(0, 30)
+      .map(item => compactText(item.textContent).slice(0, 160))
+      .filter(Boolean);
+  }
+
+  function collectDialogDiagnostics() {
+    return Array.from(document.querySelectorAll('[role="dialog"] button, [role="dialog"] div[role="button"]'))
+      .slice(0, 25)
+      .map(item => compactText(item.textContent).slice(0, 120))
+      .filter(Boolean);
+  }
+
+  function logDiagnostic(event, details = {}) {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      event: String(event || 'unknown').slice(0, 80),
+      details
+    };
+    console.info('[XYB diagnostic]', entry);
+    diagnosticWritePromise = diagnosticWritePromise
+      .then(async () => {
+        const data = await chrome.storage.local.get(DIAGNOSTIC_LOG_KEY);
+        const current = Array.isArray(data && data[DIAGNOSTIC_LOG_KEY]) ? data[DIAGNOSTIC_LOG_KEY] : [];
+        await chrome.storage.local.set({
+          [DIAGNOSTIC_LOG_KEY]: [...current, entry].slice(-MAX_DIAGNOSTIC_ENTRIES)
+        });
+      })
+      .catch(error => console.warn('[XYB] diagnostic log write failed', error));
   }
 
   function findMoreButton(article) {
@@ -700,88 +1010,20 @@
 
   async function rememberBlocked(handle, info) {
     const normalized = normalizeHandle(handle);
-    if (!normalized) return;
-
-    // Fetch avatar as data URL via background SW (avoids cross-origin canvas taint)
-    let avatarDataUrl = '';
-    if (info && info.avatarUrl) {
-      try {
-        const resp = await chrome.runtime.sendMessage({ type: 'XYB_FETCH_AVATAR', url: info.avatarUrl });
-        if (resp && resp.ok) avatarDataUrl = resp.dataUrl;
-      } catch (e) { /* keep empty */ }
-    }
-
-    // Always store even for already-blocked handles
-    if (info && (info.displayName || avatarDataUrl)) {
+    if (!normalized || isBlocked(normalized)) return;
+    const next = [...(settings.blockedHandles || []), normalized];
+    await patchSettings({ blockedHandles: next });
+    if (info && (info.displayName || info.avatarUrl)) {
       try {
         const data = await chrome.storage.local.get('xybBlockedInfo');
         const all = (data && data.xybBlockedInfo) || {};
-        all[normalized] = { displayName: info.displayName || '', avatarUrl: avatarDataUrl, blockedAt: Date.now() };
+        all[normalized] = { displayName: info.displayName || '', avatarUrl: info.avatarUrl || '', blockedAt: Date.now() };
         await chrome.storage.local.set({ xybBlockedInfo: all });
       } catch (e) {
         console.warn('[XYB] failed to store blocked info', e);
       }
     }
-
-    // Add to blocked list (skip if already there)
-    if (isBlocked(normalized)) return;
-    const next = [...(settings.blockedHandles || []), normalized];
-    await patchSettings({ blockedHandles: next });
   }
-
-  async function queueCommunityContribution(handle) {
-    if (!settings.communitySharingEnabled) return;
-    if (listHas(remoteBlocklists.accounts, handle)) return;
-    try {
-      const data = await chrome.storage.local.get(COMMUNITY_REPORTS_STORAGE_KEY);
-      const next = enqueueCommunityReport(data && data[COMMUNITY_REPORTS_STORAGE_KEY], handle);
-      await chrome.storage.local.set({ [COMMUNITY_REPORTS_STORAGE_KEY]: next });
-    } catch (error) {
-      console.warn('[XYB] failed to queue community contribution', error);
-    }
-  }
-
-  // Fire-and-forget auto-report to Cloudflare Worker.
-  // Falls back to manual queue when Worker is not configured.
-  // Never blocks the block queue; failures are silently logged.
-  async function autoReportBlocked(handle, verdict) {
-    if (!settings.communitySharingEnabled) return;
-    if (listHas(remoteBlocklists.accounts, handle)) return;
-
-    const normalized = normalizeHandle(handle);
-    if (!normalized) return;
-
-    // Fallback to manual queue when Worker not configured
-    if (!WORKER_URL) {
-      return queueCommunityContribution(normalized);
-    }
-
-    try {
-      const cache = await loadAutoReportedCache(sg);
-      if (wasAlreadyAutoReported(cache, normalized)) return;
-
-      const clientId = await getOrCreateClientId(sg, ss);
-      const verification = buildVerificationPayload(verdict);
-      if (!verification) return;
-
-      const response = await chrome.runtime.sendMessage({
-        type: 'XYB_AUTO_REPORT',
-        handles: [normalized],
-        clientId: clientId,
-        verifications: { [normalized]: verification }
-      });
-
-      if (response && response.ok) {
-        const updated = await saveAutoReportedCache(ss, cache, normalized);
-        console.info('[XYB] auto-reported', normalized, 'results:', response.results);
-      }
-    } catch (error) {
-      console.warn('[XYB] auto-report error for', normalized, error && error.message || error);
-    }
-  }
-
-  function sg(key) { return chrome.storage.local.get(key); }
-  function ss(items) { return chrome.storage.local.set(items); }
 
   async function addWhitelist(handle) {
     const normalized = normalizeHandle(handle);
