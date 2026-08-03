@@ -240,7 +240,9 @@
       .replace(/https?:\/\/\S+|www\.\S+/gi, ' url ')
       .replace(/@[a-z0-9_]{1,20}/gi, ' user ')
       .replace(/\d+/g, ' 0 ')
-      .replace(/[^\p{L}\p{N}\p{Extended_Pictographic}]+/gu, '')
+      // Spam templates rotate decorative emoji constantly. Compare the
+      // language itself so the curated sample stays stable across variants.
+      .replace(/[^\p{L}\p{N}]+/gu, '')
       .slice(0, 400);
   }
 
@@ -277,8 +279,8 @@
     if (!Array.isArray(samples) || !samples.length) return null;
     let best = null;
     for (const sample of samples.slice(0, 2000)) {
-      if (!sample || typeof sample.text !== 'string') continue;
-      const textSimilarity = diceSimilarity(tweetText, sample.text);
+      if (!sample || (typeof sample.text !== 'string' && typeof sample.displayName !== 'string')) continue;
+      const textSimilarity = sample.text ? diceSimilarity(tweetText, sample.text) : 0;
       const nameSimilarity = sample.displayName
         ? diceSimilarity(displayName, sample.displayName)
         : 0;
@@ -416,10 +418,16 @@
     if (remoteSampleMatch) {
       const textSimilarity = remoteSampleMatch.textSimilarity;
       const nameSimilarity = remoteSampleMatch.nameSimilarity;
+      const sampleTextLength = [...normalizeSampleText(remoteSampleMatch.sample.text)].length;
+      const sampleNameLength = [...normalizeSampleText(remoteSampleMatch.sample.displayName)].length;
       const hasLocalLureSignal = cnDirect || cnDisplay || cnContact || cnBioLure ||
         enDirect || enBioLure || enContact || hasShortLink || nsfwEmojiCount >= 1 ||
         hasMentionedHandle;
-      if (textSimilarity >= 0.90 && nameSimilarity >= 0.78) {
+      if (textSimilarity >= 0.94 && sampleTextLength >= 16) {
+        add(65, `exact curated lure-template match: ${Math.round(textSimilarity * 100)}%`, 'remote_sample');
+      } else if (nameSimilarity >= 0.94 && sampleNameLength >= 6 && isLowInformationReply) {
+        add(65, `curated lure-name template match: ${Math.round(nameSimilarity * 100)}%`, 'remote_sample');
+      } else if (textSimilarity >= 0.90 && nameSimilarity >= 0.78) {
         add(65, `confirmed lure-template match: ${Math.round(textSimilarity * 100)}%`, 'remote_sample');
       } else if (textSimilarity >= 0.84 && hasLocalLureSignal) {
         add(35, `lure-template similarity: ${Math.round(textSimilarity * 100)}%`, 'remote_sample');

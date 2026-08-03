@@ -1,6 +1,6 @@
 # Privacy Policy for X Yellow Blocker
 
-Last updated: July 29, 2026
+Last updated: August 3, 2026
 
 X Yellow Blocker identifies likely adult-solicitation spam in replies under an opened X post. It can locally hide matching replies, use X's visible interface to block their authors, and add muted words at the user's request.
 
@@ -21,7 +21,7 @@ These files contain keywords and sanitized language examples only. They do not c
 
 ## No account sharing or uploads
 
-Version 0.11.0 does not upload blocked accounts, handles, display names, avatars, reply text, browsing activity, cookies, installation identifiers, or diagnostic logs. It does not call the former community-reporting Worker.
+Version 0.12.0 does not upload blocked accounts, handles, display names, avatars, reply text, browsing activity, cookies, installation identifiers, or diagnostic logs. It does not call the former community-reporting Worker.
 
 ## User control and retention
 

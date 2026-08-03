@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X Yellow Blocker",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "识别 X 帖子评论区中的成人引流垃圾内容，通过 GitHub 自动同步屏蔽词与引流语言样本，不同步任何账号名单。",
   "icons": {
     "16": "assets/icons/icon16.png",
