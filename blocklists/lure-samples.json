@@ -1,5 +1,27 @@
 {
   "version": 2,
-  "updatedAt": "",
-  "samples": []
+  "updatedAt": "2026-08-03T00:00:00Z",
+  "samples": [
+    {
+      "id": "2026-08-open-play-black-lure",
+      "displayName": "",
+      "text": "应该没人比我玩的开了吧我福不黑不信你看",
+      "category": "cn_adult_solicitation",
+      "note": "评论区重复引流话术；中间的随机表情不参与匹配"
+    },
+    {
+      "id": "2026-08-too-sexy-review-lure",
+      "displayName": "",
+      "text": "我果然太涩了有人想锐评一下我的福嘛",
+      "category": "cn_adult_solicitation",
+      "note": "评论区重复引流话术；中间的随机表情不参与匹配"
+    },
+    {
+      "id": "2026-08-aphrodisiac-male-obedience-name",
+      "displayName": "催情春男用听话",
+      "text": "",
+      "category": "cn_adult_solicitation",
+      "note": "昵称引流模板；仅与低信息回复组合时命中"
+    }
+  ]
 }

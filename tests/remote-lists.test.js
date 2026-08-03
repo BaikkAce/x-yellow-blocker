@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 await import('../src/remote-lists.js');
@@ -13,6 +14,10 @@ const {
   fetchRemoteBlocklists
 } = globalThis.XybRemoteLists;
 const { evaluateTweet } = globalThis.XybDetector;
+
+const publishedSamples = parseLureSamples(
+  await readFile(new URL('../blocklists/lure-samples.json', import.meta.url), 'utf8')
+);
 
 const sampleJson = JSON.stringify({
   version: 2,
@@ -33,6 +38,30 @@ test('parses only safe keyword and lure-language data', () => {
   assert.equal(samples.length, 1);
   assert.equal(samples[0].id, '2026-07-homepage-lure');
   assert.deepEqual(Object.keys(REMOTE_LIST_URLS).sort(), ['keywords', 'lureSamples']);
+});
+
+test('accepts safe display-name-only templates and rejects underspecified rows', () => {
+  const samples = parseLureSamples(JSON.stringify({
+    version: 2,
+    samples: [
+      {
+        id: 'display-name-only',
+        displayName: '催情春男用听话',
+        text: '',
+        category: 'cn_adult_solicitation'
+      },
+      {
+        id: 'too-short',
+        displayName: '春',
+        text: 'hello',
+        category: 'cn_adult_solicitation'
+      }
+    ]
+  }));
+
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].id, 'display-name-only');
+  assert.equal(samples[0].text, '');
 });
 
 test('creates a cache snapshot without account data', () => {
@@ -114,4 +143,80 @@ test('remote language samples affect replies but not ordinary timeline posts', (
 
   assert.equal(reply.shouldAutoBlock, true);
   assert.equal(timeline.shouldAutoBlock, false);
+});
+
+test('blocks the August screenshot lure templates only in replies', () => {
+  const replies = [
+    {
+      displayName: '邱兰🌸同城上门❤️喝茶选妃',
+      tweetText: '应该没人比我玩的开了吧😡🧪我福不黑不信你看'
+    },
+    {
+      displayName: '曹秀🌸同城上门❤️喝茶选妃',
+      tweetText: '应该没人比我玩的开了吧🙂🙄我福不黑不信你看'
+    },
+    {
+      displayName: '念卿🌸',
+      tweetText: '应该没人比我玩的开了吧❄️😤我福不黑不信你看'
+    },
+    {
+      displayName: '香卉',
+      tweetText: '我果然太涩了🔔🍃有人想锐评一下我的福嘛'
+    },
+    {
+      displayName: '碧玉',
+      tweetText: '我果然太涩了🎊🌤️有人想锐评一下我的福嘛'
+    },
+    {
+      displayName: '雁菡',
+      tweetText: '我果然太涩了🍁🍟有人想锐评一下我的福嘛'
+    },
+    {
+      displayName: '👉👉催情💊春💊男用💊听话🍬🌐',
+      tweetText: 'i'
+    }
+  ];
+
+  for (const sample of replies) {
+    const result = evaluateTweet({ ...sample, isReply: true, externalLinks: [] }, {
+      remoteLureSamples: publishedSamples
+    });
+    assert.equal(result.shouldHide, true, sample.displayName);
+    assert.equal(result.shouldAutoBlock, true, sample.displayName);
+  }
+
+  const timeline = evaluateTweet({
+    displayName: '念卿🌸',
+    tweetText: '应该没人比我玩的开了吧❄️😤我福不黑不信你看',
+    isReply: false,
+    externalLinks: []
+  }, { remoteLureSamples: publishedSamples });
+
+  assert.equal(timeline.shouldHide, false);
+  assert.equal(timeline.shouldAutoBlock, false);
+});
+
+test('does not overmatch nearby normal replies', () => {
+  const samples = [
+    {
+      displayName: '游戏搭子',
+      tweetText: '应该没人比我玩得久了吧，周末一起开黑不信你看'
+    },
+    {
+      displayName: '春季男装',
+      tweetText: 'i'
+    },
+    {
+      displayName: '读书笔记',
+      tweetText: '有人想锐评一下我的读后感吗'
+    }
+  ];
+
+  for (const sample of samples) {
+    const result = evaluateTweet({ ...sample, isReply: true, externalLinks: [] }, {
+      remoteLureSamples: publishedSamples
+    });
+    assert.equal(result.shouldHide, false, sample.tweetText);
+    assert.equal(result.shouldAutoBlock, false, sample.tweetText);
+  }
 });

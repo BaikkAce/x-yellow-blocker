@@ -1,6 +1,6 @@
 {
   "name": "x-yellow-blocker",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Local MV3 extension that detects adult-solicitation tweets on X and can block high-confidence authors via the X UI.",
   "type": "module",

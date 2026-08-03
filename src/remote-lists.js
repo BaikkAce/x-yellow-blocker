@@ -78,8 +78,13 @@
       const displayName = sanitizeRemoteText(row.displayName, MAX_PROFILE_NAME_LENGTH);
       const category = String(row.category || 'remote_sample');
       const suppliedId = normalizePatternId(row.id || row.fingerprint);
+      const textLength = [...textValue].length;
+      const displayNameLength = [...displayName].length;
       const dedupeKey = `${textValue.toLocaleLowerCase()}\n${displayName.toLocaleLowerCase()}`;
-      if ([...textValue].length < 6 || !ALLOWED_SAMPLE_CATEGORIES.has(category)) continue;
+      // A curated row may describe either a stable reply template or a
+      // distinctive display-name template. Display-name-only rows are still
+      // gated by reply context and low-information body checks in detector.js.
+      if ((textLength < 6 && displayNameLength < 6) || !ALLOWED_SAMPLE_CATEGORIES.has(category)) continue;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
       result.push({

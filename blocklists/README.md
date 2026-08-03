@@ -1,6 +1,6 @@
 # Remote recognition data
 
-Version 0.11.0 reads only:
+Version 0.12.0 reads only:
 
 - `keywords.txt`: curated muted/detection words, one per line.
 - `lure-samples.json`: curated language and display-name patterns without account IDs.
