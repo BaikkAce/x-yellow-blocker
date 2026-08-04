@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updatedAt": "2026-08-03T00:00:00Z",
+  "updatedAt": "2026-08-04T00:00:00Z",
   "samples": [
     {
       "id": "2026-08-open-play-black-lure",
@@ -22,6 +22,27 @@
       "text": "",
       "category": "cn_adult_solicitation",
       "note": "昵称引流模板；仅与低信息回复组合时命中"
+    },
+    {
+      "id": "2026-08-local-match-profile-lure",
+      "displayName": "同城牵线真实可靠对接点我头像",
+      "text": "2026-08-04 15:34:53 🟨 Ive 🟦 Partially",
+      "category": "cn_adult_solicitation",
+      "note": "同城牵线及点头像引流；不包含账号 ID"
+    },
+    {
+      "id": "2026-08-nearby-meet-profile-lure",
+      "displayName": "附近好友约见真实资源点我头像",
+      "text": "2026-08-04 15:34:58 🟪 Infants 🔻 Sights",
+      "category": "cn_adult_solicitation",
+      "note": "附近约见及点头像引流；不包含账号 ID"
+    },
+    {
+      "id": "2026-08-offline-resource-profile-lure",
+      "displayName": "线下资源1-5线同步更新看简介",
+      "text": "2026-08-04 15:35:28 🔵 Partner 🔶 Pac,",
+      "category": "cn_adult_solicitation",
+      "note": "线下资源及看简介引流；不包含账号 ID"
     }
   ]
 }

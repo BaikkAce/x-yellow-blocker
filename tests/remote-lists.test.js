@@ -220,3 +220,37 @@ test('does not overmatch nearby normal replies', () => {
     assert.equal(result.shouldAutoBlock, false, sample.tweetText);
   }
 });
+
+test('blocks the August 4 profile-lure screenshot samples only in replies', () => {
+  const replies = [
+    {
+      displayName: '同城牵线🌈真实可靠对接🌈点我头像',
+      tweetText: '2026-08-04 15:34:53 🟨 Ive 🟦 Partially'
+    },
+    {
+      displayName: '附近好友约见🌈真实资源🌈点我头像',
+      tweetText: '2026-08-04 15:34:58 🟪 Infants 🔻 Sights'
+    },
+    {
+      displayName: '线下资源🌈1-5线同步更新🌈看简介',
+      tweetText: '2026-08-04 15:35:28 🔵 Partner 🔶 Pac,'
+    }
+  ];
+
+  for (const sample of replies) {
+    const result = evaluateTweet({ ...sample, isReply: true, externalLinks: [] }, {
+      remoteLureSamples: publishedSamples
+    });
+    assert.equal(result.shouldHide, true, sample.displayName);
+    assert.equal(result.shouldAutoBlock, true, sample.displayName);
+  }
+
+  const timeline = evaluateTweet({
+    ...replies[0],
+    isReply: false,
+    externalLinks: []
+  }, { remoteLureSamples: publishedSamples });
+
+  assert.equal(timeline.shouldHide, false);
+  assert.equal(timeline.shouldAutoBlock, false);
+});
